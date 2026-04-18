@@ -9,6 +9,25 @@
 Content archival and retrieval app. Captures, stores, and organizes content
 from across the web — articles, Hacker News threads, Reddit threads, tweets.
 
+## Features
+
+- **Full-fidelity captures.** Articles, HN threads, and Reddit threads are
+  stored end-to-end — article body, original post, full threaded comment
+  tree — and kept verbatim even if the source later edits, deletes, or
+  paywalls.
+- **Passive X/Twitter bookmark sync.** A Tampermonkey userscript
+  ([`scripts/tampermonkey/x-bookmarks-exporter.user.js`](./scripts/tampermonkey/x-bookmarks-exporter.user.js))
+  intercepts X's own bookmark API responses while you scroll through
+  your bookmarks and forwards them to the ingest endpoint in batches.
+  No polling, no API key, no "export your data" ritual.
+- **Purpose-built ingestors per source.** HN, Reddit, and tweet
+  extractors pull structured metadata (points, score, subreddit, author,
+  timestamps) plus the full comment tree — not just the raw HTML
+  fallback most archivers settle for. Articles fall through to a
+  Readability-based extractor.
+- **Search-first brutalist UI.** Dense list + split-view triage with
+  keyboard navigation, tags, and a ⌘K capture command from anywhere.
+
 ## Stack
 
 - **API**: Fastify + tRPC + Drizzle ORM (Bun runtime)
