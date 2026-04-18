@@ -1,0 +1,3 @@
+[install]
+# Only allow newly resolved package versions that are at least 7 days old.
+minimumReleaseAge = 604800

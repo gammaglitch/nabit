@@ -1,0 +1,14 @@
+node_modules
+.turbo
+dist
+build
+.next
+out
+coverage
+target
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+.output
+.claude

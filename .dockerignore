@@ -1,0 +1,14 @@
+node_modules
+.git
+.next
+.output
+.turbo
+dist
+.env
+.env.*
+!.env.example
+*.tgz
+*.tar
+apps/mobile
+apps/desktop
+apps/extension

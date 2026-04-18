@@ -1,0 +1,26 @@
+{
+  "name": "@repo/extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wxt build",
+    "check": "bun run lint && bun run typecheck",
+    "dev": "wxt",
+    "lint": "biome lint .",
+    "style:check": "biome check --formatter-enabled=true --linter-enabled=false .",
+    "typecheck": "tsc --noEmit",
+    "verify": "bun run check && bun run style:check && bun run build",
+    "zip": "wxt zip"
+  },
+  "dependencies": {
+    "@wxt-dev/module-react": "1.2.2",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "wxt": "0.20.20"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.38",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3"
+  }
+}

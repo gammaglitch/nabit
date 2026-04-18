@@ -1,0 +1,19 @@
+{
+  "name": "@repo/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "check": "bun run lint && bun run typecheck",
+    "dev": "tsc --project tsconfig.build.json --watch --preserveWatchOutput",
+    "fix": "biome check --write .",
+    "lint": "biome lint .",
+    "style:check": "biome check --formatter-enabled=true --linter-enabled=false .",
+    "test": "bun test",
+    "typecheck": "tsc --project tsconfig.json",
+    "verify": "bun run check && bun run style:check && bun run build"
+  }
+}
