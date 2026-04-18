@@ -1,4 +1,10 @@
-# Nabit
+<p align="center">
+  <img src="./apps/web/public/logo/mark.png" width="140" alt="nabit" />
+</p>
+
+<h1 align="center">Nabit</h1>
+
+<p align="center"><em>just nab it.</em></p>
 
 Content archival and retrieval app. Captures, stores, and organizes content
 from across the web — articles, Hacker News threads, Reddit threads, tweets.
