@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Mark } from "@/features/shared/components/Mark";
 import {
   getBrowserSupabaseClient,
   getBrowserSupabaseRedirectUrl,
@@ -14,18 +14,14 @@ export default function LoginPage() {
   const signIn = async () => {
     setBusy(true);
     setError(null);
-
     try {
       const supabase = getBrowserSupabaseClient();
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error: signInError } = await supabase.auth.signInWithOAuth({
         provider: "github",
-        options: {
-          redirectTo: getBrowserSupabaseRedirectUrl(),
-        },
+        options: { redirectTo: getBrowserSupabaseRedirectUrl() },
       });
-
-      if (error) {
-        setError(error.message);
+      if (signInError) {
+        setError(signInError.message);
         setBusy(false);
       }
     } catch {
@@ -35,31 +31,133 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-6 text-center">
-        <div>
-          <h1 className="font-[family-name:var(--font-doto)] text-4xl font-bold tracking-tight">
-            Nabit
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        background: "var(--bg)",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 380,
+          border: "1px solid var(--rule)",
+          background: "var(--bg)",
+          boxShadow: "6px 6px 0 var(--ink)",
+        }}
+      >
+        <div
+          style={{
+            padding: "16px 20px",
+            borderBottom: "1px solid var(--rule)",
+            background: "var(--ink)",
+            color: "var(--bg)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <Mark size={22} />
+          <span
+            style={{
+              fontFamily: "var(--ui-font)",
+              fontSize: 18,
+              fontWeight: 700,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            nabit
+          </span>
+          <span
+            style={{
+              marginLeft: "auto",
+              fontFamily: "var(--mono-font)",
+              fontSize: 10,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+            }}
+          >
+            Sign in
+          </span>
+        </div>
+        <div style={{ padding: "28px 24px" }}>
+          <p
+            style={{
+              fontFamily: "var(--mono-font)",
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--ink-3)",
+              marginBottom: 8,
+            }}
+          >
+            Welcome back, magpie.
+          </p>
+          <h1
+            style={{
+              fontFamily: "var(--serif-font)",
+              fontSize: 30,
+              lineHeight: 1.1,
+              color: "var(--ink)",
+              marginBottom: 20,
+            }}
+          >
+            Your hoard awaits.
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Sign in to continue
+
+          {error && (
+            <div
+              style={{
+                padding: "10px 12px",
+                marginBottom: 16,
+                border: "1px solid var(--accent)",
+                color: "var(--accent)",
+                fontFamily: "var(--mono-font)",
+                fontSize: 12,
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void signIn()}
+            style={{
+              width: "100%",
+              padding: "12px 16px",
+              border: "1px solid var(--ink)",
+              background: busy ? "var(--bg-alt)" : "var(--ink)",
+              color: busy ? "var(--ink-3)" : "var(--bg)",
+              fontFamily: "var(--mono-font)",
+              fontSize: 12,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              fontWeight: 600,
+            }}
+          >
+            {busy ? "Redirecting…" : "Sign in with GitHub"}
+          </button>
+
+          <p
+            style={{
+              marginTop: 18,
+              fontFamily: "var(--mono-font)",
+              fontSize: 10,
+              letterSpacing: "0.06em",
+              color: "var(--ink-4)",
+              lineHeight: 1.6,
+            }}
+          >
+            Paste a URL. Nabit keeps a copy forever — article body, thread OP,
+            comment tree.
           </p>
         </div>
-
-        {error ? (
-          <div className="rounded-lg border border-red-300/40 bg-red-100/70 p-3 text-sm text-red-900">
-            {error}
-          </div>
-        ) : null}
-
-        <Button
-          className="w-full"
-          disabled={busy}
-          onClick={() => void signIn()}
-          size="lg"
-        >
-          {busy ? "Redirecting..." : "Sign in with GitHub"}
-        </Button>
       </div>
     </div>
   );

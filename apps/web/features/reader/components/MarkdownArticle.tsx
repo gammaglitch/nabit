@@ -5,37 +5,77 @@ import remarkGfm from "remark-gfm";
 const markdownComponents = {
   h1: (props: ComponentPropsWithoutRef<"h1">) => (
     <h1
-      className="mb-4 mt-8 break-words text-[34px] font-bold leading-[1.2] text-white"
+      style={{
+        fontFamily: "var(--read-font)",
+        fontSize: 32,
+        fontWeight: 700,
+        lineHeight: 1.15,
+        letterSpacing: "-0.02em",
+        margin: "32px 0 16px",
+        color: "var(--ink)",
+      }}
       {...props}
     />
   ),
   h2: (props: ComponentPropsWithoutRef<"h2">) => (
     <h2
-      className="mb-3 mt-8 break-words text-[26px] font-bold leading-[1.25] text-white"
+      style={{
+        fontFamily: "var(--read-font)",
+        fontSize: 24,
+        fontWeight: 700,
+        lineHeight: 1.25,
+        letterSpacing: "-0.015em",
+        margin: "32px 0 12px",
+        color: "var(--ink)",
+      }}
       {...props}
     />
   ),
   h3: (props: ComponentPropsWithoutRef<"h3">) => (
     <h3
-      className="mb-3 mt-6 break-words text-[20px] font-semibold leading-[1.3] text-white"
+      style={{
+        fontFamily: "var(--read-font)",
+        fontSize: 19,
+        fontWeight: 600,
+        lineHeight: 1.3,
+        margin: "24px 0 10px",
+        color: "var(--ink)",
+      }}
       {...props}
     />
   ),
   h4: (props: ComponentPropsWithoutRef<"h4">) => (
     <h4
-      className="mb-2 mt-6 break-words text-[18px] font-semibold leading-[1.3] text-white"
+      style={{
+        fontFamily: "var(--read-font)",
+        fontSize: 17,
+        fontWeight: 600,
+        lineHeight: 1.3,
+        margin: "20px 0 8px",
+        color: "var(--ink)",
+      }}
       {...props}
     />
   ),
   p: (props: ComponentPropsWithoutRef<"p">) => (
     <p
-      className="mb-5 break-words text-[17px] leading-[1.7] text-[#E8E8E8]"
+      style={{
+        fontFamily: "var(--read-font)",
+        fontSize: 17,
+        lineHeight: 1.6,
+        color: "var(--ink)",
+        marginBottom: 20,
+      }}
       {...props}
     />
   ),
   a: (props: ComponentPropsWithoutRef<"a">) => (
     <a
-      className="text-[#5B9BF6] underline decoration-[#5B9BF6]/40 underline-offset-2 transition-colors duration-200 hover:text-[#E8E8E8] hover:decoration-[#E8E8E8]"
+      style={{
+        color: "var(--accent)",
+        textDecorationColor: "var(--accent)",
+        textUnderlineOffset: 2,
+      }}
       target="_blank"
       rel="noreferrer"
       {...props}
@@ -43,31 +83,70 @@ const markdownComponents = {
   ),
   ul: (props: ComponentPropsWithoutRef<"ul">) => (
     <ul
-      className="mb-5 list-disc space-y-2 pl-6 text-[17px] leading-[1.7] text-[#E8E8E8]"
+      style={{
+        fontFamily: "var(--read-font)",
+        fontSize: 17,
+        lineHeight: 1.7,
+        color: "var(--ink)",
+        marginBottom: 20,
+        paddingLeft: 24,
+        listStyle: "disc",
+      }}
       {...props}
     />
   ),
   ol: (props: ComponentPropsWithoutRef<"ol">) => (
     <ol
-      className="mb-5 list-decimal space-y-2 pl-6 text-[17px] leading-[1.7] text-[#E8E8E8]"
+      style={{
+        fontFamily: "var(--read-font)",
+        fontSize: 17,
+        lineHeight: 1.7,
+        color: "var(--ink)",
+        marginBottom: 20,
+        paddingLeft: 24,
+        listStyle: "decimal",
+      }}
       {...props}
     />
   ),
   li: (props: ComponentPropsWithoutRef<"li">) => (
-    <li className="leading-[1.6]" {...props} />
+    <li style={{ lineHeight: 1.6, marginBottom: 6 }} {...props} />
   ),
   blockquote: (props: ComponentPropsWithoutRef<"blockquote">) => (
     <blockquote
-      className="my-5 border-l-2 border-[#333333] pl-4 italic text-[#999999]"
+      style={{
+        margin: "20px 0",
+        paddingLeft: 16,
+        borderLeft: "2px solid var(--rule)",
+        fontStyle: "italic",
+        color: "var(--ink-2)",
+      }}
       {...props}
     />
   ),
   hr: (props: ComponentPropsWithoutRef<"hr">) => (
-    <hr className="my-8 border-[#1A1A1A]" {...props} />
+    <hr
+      style={{
+        margin: "32px 0",
+        border: 0,
+        borderTop: "1px solid var(--rule-soft)",
+      }}
+      {...props}
+    />
   ),
   pre: (props: ComponentPropsWithoutRef<"pre">) => (
     <pre
-      className="my-5 overflow-x-auto rounded-[8px] border border-[#1A1A1A] bg-[#0A0A0A] p-4 text-[14px] leading-[1.6] text-[#E8E8E8]"
+      style={{
+        margin: "20px 0",
+        padding: 16,
+        overflow: "auto",
+        border: "1px solid var(--rule-soft)",
+        background: "var(--bg-alt)",
+        fontFamily: "var(--mono-font)",
+        fontSize: 13,
+        lineHeight: 1.6,
+        color: "var(--ink)",
+      }}
       {...props}
     />
   ),
@@ -80,7 +159,8 @@ const markdownComponents = {
     if (isBlock) {
       return (
         <code
-          className={`font-[family-name:var(--font-space-mono)] ${className ?? ""}`}
+          className={className}
+          style={{ fontFamily: "var(--mono-font)" }}
           {...props}
         >
           {children}
@@ -89,7 +169,14 @@ const markdownComponents = {
     }
     return (
       <code
-        className="rounded-[4px] border border-[#1A1A1A] bg-[#0A0A0A] px-1.5 py-0.5 font-[family-name:var(--font-space-mono)] text-[14px] text-[#E8E8E8]"
+        style={{
+          padding: "1px 5px",
+          border: "1px solid var(--rule-soft)",
+          background: "var(--bg-alt)",
+          fontFamily: "var(--mono-font)",
+          fontSize: 13,
+          color: "var(--ink)",
+        }}
         {...props}
       >
         {children}
@@ -97,35 +184,56 @@ const markdownComponents = {
     );
   },
   strong: (props: ComponentPropsWithoutRef<"strong">) => (
-    <strong className="font-semibold text-white" {...props} />
+    <strong style={{ fontWeight: 600, color: "var(--ink)" }} {...props} />
   ),
   em: (props: ComponentPropsWithoutRef<"em">) => (
-    <em className="italic" {...props} />
+    <em style={{ fontStyle: "italic" }} {...props} />
   ),
   img: ({ alt, ...props }: ComponentPropsWithoutRef<"img">) => (
     // biome-ignore lint/performance/noImgElement: markdown image, not part of next/image flow
     <img
       alt={alt ?? ""}
-      className="my-5 max-w-full rounded-[8px] border border-[#1A1A1A]"
+      style={{
+        margin: "20px 0",
+        maxWidth: "100%",
+        border: "1px solid var(--rule-soft)",
+      }}
       {...props}
     />
   ),
   table: (props: ComponentPropsWithoutRef<"table">) => (
-    <div className="my-5 overflow-x-auto">
+    <div style={{ margin: "20px 0", overflow: "auto" }}>
       <table
-        className="w-full border-collapse text-[15px] text-[#E8E8E8]"
+        style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          fontSize: 15,
+          color: "var(--ink)",
+        }}
         {...props}
       />
     </div>
   ),
   th: (props: ComponentPropsWithoutRef<"th">) => (
     <th
-      className="border border-[#1A1A1A] bg-[#111111] px-3 py-2 text-left font-semibold"
+      style={{
+        border: "1px solid var(--rule-soft)",
+        background: "var(--bg-alt)",
+        padding: "8px 12px",
+        textAlign: "left",
+        fontWeight: 600,
+      }}
       {...props}
     />
   ),
   td: (props: ComponentPropsWithoutRef<"td">) => (
-    <td className="border border-[#1A1A1A] px-3 py-2" {...props} />
+    <td
+      style={{
+        border: "1px solid var(--rule-soft)",
+        padding: "8px 12px",
+      }}
+      {...props}
+    />
   ),
 };
 

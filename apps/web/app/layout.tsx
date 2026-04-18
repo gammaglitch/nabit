@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import {
-  Doto,
   IBM_Plex_Mono,
+  Instrument_Serif,
+  JetBrains_Mono,
   Space_Grotesk,
-  Space_Mono,
 } from "next/font/google";
 import { Providers } from "@/components/providers";
 import "./globals.css";
@@ -11,6 +11,13 @@ import "./globals.css";
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
 });
 
 const ibmPlexMono = IBM_Plex_Mono({
@@ -19,21 +26,28 @@ const ibmPlexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
 });
 
-const spaceMono = Space_Mono({
-  variable: "--font-space-mono",
+const instrumentSerif = Instrument_Serif({
+  variable: "--font-instrument-serif",
   subsets: ["latin"],
-  weight: ["400", "700"],
-});
-
-const doto = Doto({
-  variable: "--font-doto",
-  subsets: ["latin"],
+  weight: ["400"],
 });
 
 export const metadata: Metadata = {
-  title: "Nabit",
-  description: "Content ingestion and archival.",
+  title: "nabit",
+  description: "Archive interesting articles, HN threads, and Reddit threads.",
 };
+
+const themeInitScript = `
+(function () {
+  try {
+    var t = localStorage.getItem('nabit.theme');
+    if (t !== 'paper' && t !== 'terminal') t = 'paper';
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'paper');
+  }
+})();
+`.trim();
 
 export default function RootLayout({
   children,
@@ -43,9 +57,16 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} ${spaceMono.variable} ${doto.variable} h-full antialiased`}
+      className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} ${ibmPlexMono.variable} ${instrumentSerif.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full bg-background text-foreground">
+      <head>
+        <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: required for pre-hydration theme init to avoid flash
+          dangerouslySetInnerHTML={{ __html: themeInitScript }}
+        />
+      </head>
+      <body>
         <Providers>{children}</Providers>
       </body>
     </html>

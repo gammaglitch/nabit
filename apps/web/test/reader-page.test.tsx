@@ -127,18 +127,43 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }));
 
+const mutationStub = () => ({
+  isPending: false,
+  mutate: vi.fn(),
+  mutateAsync: vi.fn().mockResolvedValue({ id: 0, name: "stub" }),
+});
+
 vi.mock("@/lib/trpc/react", () => ({
   trpc: {
+    useUtils: () => ({
+      ingest: {
+        get: { invalidate: vi.fn() },
+        list: { invalidate: vi.fn() },
+      },
+      tags: { list: { invalidate: vi.fn() } },
+    }),
     ingest: {
       get: {
         useQuery: (...args: unknown[]) => useQueryMock(...args),
       },
     },
+    tags: {
+      list: {
+        useQuery: () => ({
+          data: { tags: [{ id: 1, name: "firefox" }] },
+          error: null,
+          isLoading: false,
+        }),
+      },
+      addToItem: { useMutation: mutationStub },
+      removeFromItem: { useMutation: mutationStub },
+      create: { useMutation: mutationStub },
+    },
   },
 }));
 
 describe("ReaderPage", () => {
-  test("renders the article markdown plus inline discussion comments", () => {
+  test("renders the article title, markdown body, and discussion comments", () => {
     useQueryMock.mockReturnValue({
       data: { item: detailItem },
       error: null,
@@ -156,30 +181,21 @@ describe("ReaderPage", () => {
     expect(
       screen.getByRole("heading", { level: 2, name: "A heading" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("DISCUSSED ON")).toBeInTheDocument();
-    expect(screen.getByText("HACKER NEWS POST")).toBeInTheDocument();
-    expect(screen.getByText("1133 points")).toBeInTheDocument();
-    expect(screen.getByText("2 COMMENTS")).toBeInTheDocument();
-    expect(screen.getByText("@dang")).toBeInTheDocument();
     expect(
       screen.getByText("Top-level comment about the article."),
     ).toBeInTheDocument();
-    expect(screen.getByText("@patio11")).toBeInTheDocument();
     expect(
       screen.getByText("A nested reply with more thoughts."),
     ).toBeInTheDocument();
-
-    const externalLink = screen.getByRole("link", { name: /OPEN ↗/ });
-    expect(externalLink).toHaveAttribute(
-      "href",
-      "https://news.ycombinator.com/item?id=47730194",
-    );
-    expect(externalLink).toHaveAttribute("target", "_blank");
+    expect(screen.getByText("dang")).toBeInTheDocument();
+    expect(screen.getByText("patio11")).toBeInTheDocument();
   });
 
-  test("hides the discussion section when the article has no discussions", () => {
+  test("hides the comments pane when no discussions or comments exist", () => {
     useQueryMock.mockReturnValue({
-      data: { item: { ...detailItem, discussions: [] } },
+      data: {
+        item: { ...detailItem, discussions: [], comments: [] },
+      },
       error: null,
       isLoading: false,
     });
@@ -192,8 +208,8 @@ describe("ReaderPage", () => {
         name: "Every Firefox Extension",
       }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("DISCUSSED ON")).not.toBeInTheDocument();
-    expect(screen.queryByText("@dang")).not.toBeInTheDocument();
+    expect(screen.queryByText("dang")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Comments ·/)).not.toBeInTheDocument();
   });
 
   test("falls back to plain contentText when contentMarkdown is null", () => {
@@ -204,6 +220,7 @@ describe("ReaderPage", () => {
           contentMarkdown: null,
           contentText: "Just some plain text without markdown.",
           discussions: [],
+          comments: [],
         },
       },
       error: null,
@@ -217,7 +234,7 @@ describe("ReaderPage", () => {
     ).toBeInTheDocument();
   });
 
-  test("renders the item's own comments when it is itself a discussion", () => {
+  test("shows the item's own comments when it is itself a discussion", () => {
     const discussionAsItem: MockItem = {
       ...detailItem,
       contentMarkdown: null,
@@ -247,14 +264,9 @@ describe("ReaderPage", () => {
 
     render(<ReaderPage id={1} />);
 
-    expect(
-      screen.getByText("[NO ARTICLE CONTENT EXTRACTED]"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("COMMENTS · 1")).toBeInTheDocument();
-    expect(screen.getByText("@normanvalentine")).toBeInTheDocument();
+    expect(screen.getByText("normanvalentine")).toBeInTheDocument();
     expect(
       screen.getByText("Original poster's comment on their own thread."),
     ).toBeInTheDocument();
-    expect(screen.queryByText("DISCUSSED ON")).not.toBeInTheDocument();
   });
 });

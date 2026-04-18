@@ -3,14 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Mark } from "@/features/shared/components/Mark";
 import { completeBrowserSupabaseAuth } from "@/lib/supabase/auth";
 
 type CallbackState =
@@ -20,25 +13,15 @@ type CallbackState =
 
 export default function AuthCallbackPage() {
   const router = useRouter();
-  const [state, setState] = useState<CallbackState>({
-    status: "loading",
-  });
+  const [state, setState] = useState<CallbackState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
-
     const completeSignIn = async () => {
       try {
         await completeBrowserSupabaseAuth(window.location.href);
-
-        if (cancelled) {
-          return;
-        }
-
-        setState({
-          status: "success",
-        });
-
+        if (cancelled) return;
+        setState({ status: "success" });
         window.history.replaceState({}, "", "/auth/callback");
         router.replace("/");
       } catch (error) {
@@ -55,50 +38,133 @@ export default function AuthCallbackPage() {
     };
 
     void completeSignIn();
-
     return () => {
       cancelled = true;
     };
   }, [router]);
 
+  const title =
+    state.status === "loading"
+      ? "Completing sign in"
+      : state.status === "success"
+        ? "Signed in. Shiny."
+        : "Sign in failed";
+
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,_#f5ede0_0%,_#efe4d2_48%,_#e8dcc6_100%)] px-6 py-10 text-foreground sm:px-10 lg:px-14">
-      <div className="mx-auto max-w-2xl">
-        <Card className="border-border/70 bg-card/95 backdrop-blur">
-          <CardHeader>
-            <CardDescription>Supabase Auth</CardDescription>
-            <CardTitle className="text-3xl">
-              {state.status === "loading"
-                ? "Completing sign in"
-                : state.status === "success"
-                  ? "Signed in"
-                  : "Sign in failed"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {state.status === "loading" ? (
-              <p className="text-base leading-7 text-muted-foreground">
-                Finishing the Supabase redirect and preparing your session.
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        background: "var(--bg)",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 460,
+          border: "1px solid var(--rule)",
+          background: "var(--bg)",
+          boxShadow: "6px 6px 0 var(--ink)",
+        }}
+      >
+        <div
+          style={{
+            padding: "16px 20px",
+            borderBottom: "1px solid var(--rule)",
+            background: "var(--ink)",
+            color: "var(--bg)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <Mark size={22} />
+          <span
+            style={{
+              fontFamily: "var(--mono-font)",
+              fontSize: 11,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              fontWeight: 600,
+            }}
+          >
+            Supabase auth
+          </span>
+        </div>
+        <div style={{ padding: "28px 24px" }}>
+          <h1
+            style={{
+              fontFamily: "var(--serif-font)",
+              fontSize: 28,
+              lineHeight: 1.1,
+              color: "var(--ink)",
+              marginBottom: 14,
+            }}
+          >
+            {title}
+          </h1>
+          {state.status === "loading" && (
+            <p
+              style={{
+                fontFamily: "var(--mono-font)",
+                fontSize: 12,
+                color: "var(--ink-3)",
+                lineHeight: 1.6,
+              }}
+            >
+              Finishing the redirect and preparing your session…
+            </p>
+          )}
+          {state.status === "success" && (
+            <p
+              style={{
+                fontFamily: "var(--mono-font)",
+                fontSize: 12,
+                color: "var(--ink-3)",
+                lineHeight: 1.6,
+              }}
+            >
+              Session ready. Taking you to your hoard.
+            </p>
+          )}
+          {state.status === "error" && (
+            <>
+              <p
+                style={{
+                  padding: "10px 12px",
+                  marginBottom: 16,
+                  border: "1px solid var(--accent)",
+                  color: "var(--accent)",
+                  fontFamily: "var(--mono-font)",
+                  fontSize: 12,
+                }}
+              >
+                {state.message}
               </p>
-            ) : null}
-            {state.status === "success" ? (
-              <p className="text-base leading-7 text-muted-foreground">
-                Your session is ready. Redirecting back to the home page.
-              </p>
-            ) : null}
-            {state.status === "error" ? (
-              <>
-                <p className="rounded-2xl border border-red-300/40 bg-red-100/70 p-4 text-sm leading-6 text-red-900">
-                  {state.message}
-                </p>
-                <Button asChild variant="outline">
-                  <Link href="/">Back to home</Link>
-                </Button>
-              </>
-            ) : null}
-          </CardContent>
-        </Card>
+              <Link
+                href="/"
+                style={{
+                  display: "inline-block",
+                  padding: "8px 14px",
+                  border: "1px solid var(--ink)",
+                  background: "var(--ink)",
+                  color: "var(--bg)",
+                  fontFamily: "var(--mono-font)",
+                  fontSize: 11,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  textDecoration: "none",
+                }}
+              >
+                Back to hoard
+              </Link>
+            </>
+          )}
+        </div>
       </div>
-    </main>
+    </div>
   );
 }

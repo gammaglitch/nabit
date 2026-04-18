@@ -1,9 +1,9 @@
-import { formatRelativeTime, mono } from "@/features/shared/utils/format";
+import { timeAgo } from "@/features/shared/utils/source";
 
-const MAX_COMMENT_DEPTH = 8;
+const MAX_DEPTH = 8;
 
 function commentDepth(path: string) {
-  return path.split(".").length - 1;
+  return Math.min(path.split(".").length - 1, MAX_DEPTH);
 }
 
 export type CommentNode = {
@@ -20,41 +20,77 @@ export type CommentNode = {
 export function CommentTree({ comments }: { comments: CommentNode[] }) {
   if (comments.length === 0) {
     return (
-      <p className={`${mono} text-[#666666]`}>
-        No comments archived for this discussion.
-      </p>
+      <div
+        style={{
+          padding: "40px 20px",
+          fontFamily: "var(--mono-font)",
+          fontSize: 12,
+          color: "var(--ink-3)",
+          lineHeight: 1.6,
+        }}
+      >
+        No comments on this source.
+      </div>
     );
   }
 
   return (
-    <div className="space-y-3">
-      {comments.map((comment) => {
-        const depth = Math.min(commentDepth(comment.path), MAX_COMMENT_DEPTH);
+    <div>
+      {comments.map((c) => {
+        const depth = commentDepth(c.path);
         const points =
-          typeof comment.metadata.points === "number"
-            ? comment.metadata.points
-            : null;
+          typeof c.metadata.points === "number" ? c.metadata.points : null;
         return (
-          <div key={comment.id} style={{ paddingLeft: `${depth * 16}px` }}>
-            <div className="border-l border-[#1A1A1A] pl-3">
-              <div className="mb-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                {comment.author && (
-                  <span className={`${mono} text-[#999999]`}>
-                    @{comment.author}
-                  </span>
-                )}
-                {points !== null && (
-                  <span className={`${mono} text-[#666666]`}>{points} pts</span>
-                )}
-                {comment.sourceCreatedAt && (
-                  <span className={`${mono} text-[#666666]`}>
-                    {formatRelativeTime(comment.sourceCreatedAt)}
-                  </span>
-                )}
-              </div>
-              <p className="break-words text-[14px] leading-[1.6] text-[#E8E8E8] whitespace-pre-line">
-                {comment.contentText}
-              </p>
+          <div
+            key={c.id}
+            style={{
+              position: "relative",
+              padding: "14px 20px",
+              borderBottom: "1px solid var(--rule-soft)",
+              paddingLeft: 20 + depth * 18,
+              borderLeft: depth > 0 ? "1px solid var(--rule-soft)" : "none",
+              marginLeft: depth > 0 ? depth * 4 : 0,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "var(--mono-font)",
+                fontSize: 11,
+                color: "var(--ink-3)",
+                marginBottom: 6,
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+              }}
+            >
+              {c.author && (
+                <span style={{ color: "var(--ink)", fontWeight: 600 }}>
+                  {c.author}
+                </span>
+              )}
+              {points !== null && (
+                <>
+                  <span>·</span>
+                  <span>↑ {points}</span>
+                </>
+              )}
+              {c.sourceCreatedAt && (
+                <>
+                  <span>·</span>
+                  <span>{timeAgo(c.sourceCreatedAt)}</span>
+                </>
+              )}
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--read-font)",
+                fontSize: 14,
+                lineHeight: 1.55,
+                color: "var(--ink-2)",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {c.contentText}
             </div>
           </div>
         );
