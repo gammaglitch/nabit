@@ -52,16 +52,16 @@ export default function LoginPage() {
       >
         <div
           style={{
-            padding: "16px 20px",
+            padding: "18px 20px 16px",
             borderBottom: "1px solid var(--rule)",
-            background: "var(--ink)",
-            color: "var(--bg)",
+            background: "var(--bg)",
+            color: "var(--ink)",
             display: "flex",
             alignItems: "center",
             gap: 10,
           }}
         >
-          <Mark size={22} />
+          <Mark size={28} />
           <span
             style={{
               fontFamily: "var(--ui-font)",
@@ -79,6 +79,7 @@ export default function LoginPage() {
               fontSize: 10,
               letterSpacing: "0.12em",
               textTransform: "uppercase",
+              color: "var(--ink-3)",
             }}
           >
             Sign in

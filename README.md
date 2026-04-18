@@ -50,8 +50,9 @@ together (compose file, Kubernetes, a single VM, etc.) is up to you.
 | `SUPABASE_JWT_AUDIENCE` | no | Defaults to `authenticated`. |
 | `SUPABASE_JWT_ISSUER` | no | Override if your Supabase instance uses a non-standard issuer. |
 | `SUPABASE_JWKS_URL` | no | Override if you host your own JWKS. |
-| `ALLOWED_EMAILS` | yes | Comma-separated list of emails permitted to sign in. |
+| `ALLOWED_EMAILS` | when auth required | Comma-separated list of emails permitted to sign in. Ignored when `AUTH_REQUIRED=false`. |
 | `API_TOKEN` | no | Static bearer token for browser-extension / automation calls that don't carry a Supabase JWT. |
+| `AUTH_REQUIRED` | no | Set to `false` to run single-user: the API skips JWT verification and treats every request as an admin. Only safe behind a trusted network boundary (localhost, VPN, Tailscale). Defaults to `true`. Pair with `NEXT_PUBLIC_AUTH_REQUIRED=false` on the web. |
 
 ### Web (`nabit-web`)
 
@@ -64,6 +65,7 @@ variables to `next build` if you're building without Docker).
 | `NEXT_PUBLIC_API_URL` | yes | Public tRPC endpoint, e.g. `https://api.example.com/trpc`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | yes | Supabase project URL. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Supabase anonymous key. |
+| `NEXT_PUBLIC_AUTH_REQUIRED` | no | Set to `false` to skip the sign-in gate. Must match the API's `AUTH_REQUIRED`. Defaults to `true`. |
 
 ### Database migrations
 

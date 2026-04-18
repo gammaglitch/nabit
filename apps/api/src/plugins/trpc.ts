@@ -12,8 +12,14 @@ type CreateContextOptions = Parameters<
 >[0];
 
 function createTrpcContext({ req }: CreateContextOptions): TrpcContext {
+  // When auth is disabled, ignore ALLOWED_EMAILS so the email gate in
+  // `isAuthed` doesn't reject the synthetic local user.
+  const allowedEmails = req.server.env.authRequired
+    ? req.server.env.allowedEmails
+    : null;
+
   return {
-    allowedEmails: req.server.env.allowedEmails,
+    allowedEmails,
     requestId: req.id,
     services: req.server.services,
     user: req.user,

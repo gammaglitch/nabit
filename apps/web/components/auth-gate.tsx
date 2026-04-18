@@ -4,10 +4,21 @@ import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { useBrowserSupabaseSession } from "@/hooks/use-browser-supabase-session";
+import { authRequired } from "@/lib/auth/required";
 
 const PUBLIC_PATHS = ["/login", "/auth/callback"];
 
 export function AuthGate({ children }: { children: ReactNode }) {
+  // When auth is disabled at build time, render children directly — no
+  // session fetch, no redirect, no flash. Mirror the API's AUTH_REQUIRED.
+  if (!authRequired()) {
+    return <>{children}</>;
+  }
+
+  return <GateEnforced>{children}</GateEnforced>;
+}
+
+function GateEnforced({ children }: { children: ReactNode }) {
   const { session, supabaseClient, supabaseError } =
     useBrowserSupabaseSession();
   const pathname = usePathname();
