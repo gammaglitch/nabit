@@ -43,34 +43,6 @@ export function LibrarySidebar(props: SidebarProps) {
         position: "relative",
       }}
     >
-      <button
-        type="button"
-        onClick={props.onToggleCollapse}
-        title={
-          props.collapsed ? "Expand sidebar (⌘\\)" : "Collapse sidebar (⌘\\)"
-        }
-        style={{
-          position: "absolute",
-          top: 20,
-          right: -1,
-          transform: "translateX(50%)",
-          width: 20,
-          height: 20,
-          border: "1px solid var(--rule)",
-          background: "var(--bg)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: "var(--mono-font)",
-          fontSize: 11,
-          color: "var(--ink-2)",
-          zIndex: 2,
-          lineHeight: 1,
-        }}
-      >
-        {props.collapsed ? "›" : "‹"}
-      </button>
-
       {props.collapsed ? (
         <CollapsedRail {...props} />
       ) : (
@@ -89,6 +61,7 @@ function ExpandedSidebar({
   activeTag,
   setActiveTag,
   allTags,
+  onToggleCollapse,
 }: SidebarProps) {
   return (
     <>
@@ -101,7 +74,7 @@ function ExpandedSidebar({
           gap: 10,
         }}
       >
-        <Mark size={22} />
+        <Mark size={75} />
         <div
           style={{
             fontFamily: "var(--ui-font)",
@@ -112,6 +85,42 @@ function ExpandedSidebar({
         >
           nabit
         </div>
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          title="Collapse sidebar (⌘\)"
+          aria-label="Collapse sidebar"
+          style={{
+            marginLeft: "auto",
+            width: 28,
+            height: 28,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            border: "1px solid var(--rule)",
+            background: "var(--bg)",
+            color: "var(--ink-2)",
+            cursor: "pointer",
+            borderRadius: 4,
+            padding: 0,
+          }}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M7.5 2.5 L3.5 6 L7.5 9.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
       </div>
 
       <div style={{ padding: "14px 0 8px", borderBottom: "1px solid var(--rule-soft)" }}>
