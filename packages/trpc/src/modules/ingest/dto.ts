@@ -108,16 +108,12 @@ export const CommentOutput = z.object({
   metadata: MetadataRecord,
 });
 
-export const DiscussionWithComments = ItemSummaryOutput.extend({
-  comments: z.array(CommentOutput),
-});
-
 export const ItemDetailOutput = z.object({
   item: ItemSummaryOutput.extend({
     snapshots: z.array(RawSnapshotOutput),
     extractions: z.array(ExtractionOutput),
     comments: z.array(CommentOutput),
-    discussions: z.array(DiscussionWithComments),
+    linkedItem: ItemSummaryOutput.nullable(),
   }),
 });
 

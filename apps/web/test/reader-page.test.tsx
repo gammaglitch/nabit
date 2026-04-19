@@ -13,10 +13,9 @@ type MockComment = {
   sourceCreatedAt: string | null;
 };
 
-type MockDiscussion = {
+type MockLinkedItem = {
   author: string | null;
   commentCount: number;
-  comments: MockComment[];
   contentMarkdown: string | null;
   contentText: string | null;
   externalId: string | null;
@@ -39,7 +38,7 @@ type MockItem = {
   comments: MockComment[];
   contentMarkdown: string | null;
   contentText: string | null;
-  discussions: MockDiscussion[];
+  linkedItem: MockLinkedItem | null;
   externalId: string | null;
   extractions: never[];
   id: number;
@@ -56,114 +55,116 @@ type MockItem = {
   title: string | null;
 };
 
-const detailItem: MockItem = {
+const linkedArticle: MockLinkedItem = {
   author: "Jack Cab",
   commentCount: 0,
-  comments: [],
   contentMarkdown:
     '## A heading\n\nHere is a paragraph with **bold** text and an [example link](https://example.com).\n\n```rust\nfn main() {\n    println!("hello");\n}\n```',
   contentText: "A heading. Here is a paragraph...",
-  discussions: [
-    {
-      author: "normanvalentine",
-      commentCount: 2,
-      comments: [
-        {
-          author: "dang",
-          contentText: "Top-level comment about the article.",
-          externalId: "c-100",
-          id: 100,
-          metadata: { points: 42 },
-          parentExternalId: null,
-          path: "n0001",
-          sourceCreatedAt: null,
-        },
-        {
-          author: "patio11",
-          contentText: "A nested reply with more thoughts.",
-          externalId: "c-101",
-          id: 101,
-          metadata: { points: 7 },
-          parentExternalId: "c-100",
-          path: "n0001.n0001",
-          sourceCreatedAt: null,
-        },
-      ],
-      contentMarkdown: null,
-      contentText: null,
-      externalId: "47730194",
-      id: 99,
-      ingestedAt: "2026-04-10T12:00:00.000Z",
-      latestExtractionStatus: "success",
-      metadata: { points: 1133 },
-      snapshotCount: 1,
-      sourceCreatedAt: "2026-04-09T08:00:00.000Z",
-      sourceType: "hacker_news_post",
-      sourceUrl: "https://news.ycombinator.com/item?id=47730194",
-      subjectItemId: 1,
-      tags: [],
-      title: "Filing the corners off my MacBooks",
-    },
-  ],
   externalId: "https://jack.cab/blog/every-firefox-extension",
-  extractions: [],
-  id: 1,
+  id: 2,
   ingestedAt: "2026-04-09T07:30:00.000Z",
   latestExtractionStatus: "success",
   metadata: { siteName: "Jack Cab", wordCount: 1234 },
   snapshotCount: 1,
-  snapshots: [],
   sourceCreatedAt: "2026-04-08T10:00:00.000Z",
   sourceType: "webpage",
   sourceUrl: "https://jack.cab/blog/every-firefox-extension",
-  subjectItemId: null,
-  tags: [{ id: 1, name: "firefox" }],
+  subjectItemId: 1,
+  tags: [],
   title: "Every Firefox Extension",
 };
 
-const useQueryMock = vi.fn();
+const detailItem: MockItem = {
+  author: "normanvalentine",
+  commentCount: 2,
+  comments: [
+    {
+      author: "dang",
+      contentText: "Top-level comment about the article.",
+      externalId: "c-100",
+      id: 100,
+      metadata: { points: 42 },
+      parentExternalId: null,
+      path: "n0001",
+      sourceCreatedAt: null,
+    },
+    {
+      author: "patio11",
+      contentText: "A nested reply with more thoughts.",
+      externalId: "c-101",
+      id: 101,
+      metadata: { points: 7 },
+      parentExternalId: "c-100",
+      path: "n0001.n0001",
+      sourceCreatedAt: null,
+    },
+  ],
+  contentMarkdown: null,
+  contentText: null,
+  linkedItem: linkedArticle,
+  externalId: "47730194",
+  extractions: [],
+  id: 1,
+  ingestedAt: "2026-04-10T12:00:00.000Z",
+  latestExtractionStatus: "success",
+  metadata: { points: 1133 },
+  snapshotCount: 1,
+  snapshots: [],
+  sourceCreatedAt: "2026-04-09T08:00:00.000Z",
+  sourceType: "hacker_news_post",
+  sourceUrl: "https://news.ycombinator.com/item?id=47730194",
+  subjectItemId: null,
+  tags: [{ id: 1, name: "firefox" }],
+  title: "Filing the corners off my MacBooks",
+};
+
+const { useQueryMock } = vi.hoisted(() => ({
+  useQueryMock: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }));
 
-const mutationStub = () => ({
-  isPending: false,
-  mutate: vi.fn(),
-  mutateAsync: vi.fn().mockResolvedValue({ id: 0, name: "stub" }),
+vi.mock("@/lib/trpc/react", () => {
+  const mutationStub = () => ({
+    isPending: false,
+    mutate: vi.fn(),
+    mutateAsync: vi.fn().mockResolvedValue({ id: 0, name: "stub" }),
+  });
+  return {
+    trpc: {
+      useUtils: () => ({
+        ingest: {
+          get: { invalidate: vi.fn() },
+          list: { invalidate: vi.fn() },
+        },
+        tags: { list: { invalidate: vi.fn() } },
+      }),
+      ingest: {
+        get: {
+          useQuery: (...args: unknown[]) => useQueryMock(...args),
+        },
+      },
+      tags: {
+        list: {
+          useQuery: () => ({
+            data: { tags: [{ id: 1, name: "firefox" }] },
+            error: null,
+            isLoading: false,
+          }),
+        },
+        addToItem: { useMutation: mutationStub },
+        removeFromItem: { useMutation: mutationStub },
+        create: { useMutation: mutationStub },
+      },
+    },
+  };
 });
 
-vi.mock("@/lib/trpc/react", () => ({
-  trpc: {
-    useUtils: () => ({
-      ingest: {
-        get: { invalidate: vi.fn() },
-        list: { invalidate: vi.fn() },
-      },
-      tags: { list: { invalidate: vi.fn() } },
-    }),
-    ingest: {
-      get: {
-        useQuery: (...args: unknown[]) => useQueryMock(...args),
-      },
-    },
-    tags: {
-      list: {
-        useQuery: () => ({
-          data: { tags: [{ id: 1, name: "firefox" }] },
-          error: null,
-          isLoading: false,
-        }),
-      },
-      addToItem: { useMutation: mutationStub },
-      removeFromItem: { useMutation: mutationStub },
-      create: { useMutation: mutationStub },
-    },
-  },
-}));
-
 describe("ReaderPage", () => {
-  test("renders the article title, markdown body, and discussion comments", () => {
+  test("renders an HN thread with its linked article body and comments", () => {
     useQueryMock.mockReturnValue({
       data: { item: detailItem },
       error: null,
@@ -175,7 +176,7 @@ describe("ReaderPage", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: "Every Firefox Extension",
+        name: "Filing the corners off my MacBooks",
       }),
     ).toBeInTheDocument();
     expect(
@@ -191,10 +192,10 @@ describe("ReaderPage", () => {
     expect(screen.getByText("patio11")).toBeInTheDocument();
   });
 
-  test("hides the comments pane when no discussions or comments exist", () => {
+  test("hides the comments pane when the item has no comments", () => {
     useQueryMock.mockReturnValue({
       data: {
-        item: { ...detailItem, discussions: [], comments: [] },
+        item: { ...detailItem, comments: [] },
       },
       error: null,
       isLoading: false,
@@ -205,7 +206,7 @@ describe("ReaderPage", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: "Every Firefox Extension",
+        name: "Filing the corners off my MacBooks",
       }),
     ).toBeInTheDocument();
     expect(screen.queryByText("dang")).not.toBeInTheDocument();
@@ -219,8 +220,9 @@ describe("ReaderPage", () => {
           ...detailItem,
           contentMarkdown: null,
           contentText: "Just some plain text without markdown.",
-          discussions: [],
+          linkedItem: null,
           comments: [],
+          sourceType: "webpage",
         },
       },
       error: null,
@@ -234,14 +236,14 @@ describe("ReaderPage", () => {
     ).toBeInTheDocument();
   });
 
-  test("shows the item's own comments when it is itself a discussion", () => {
-    const discussionAsItem: MockItem = {
+  test("shows the self-post excerpt for a thread with no linked article", () => {
+    const selfPost: MockItem = {
       ...detailItem,
       contentMarkdown: null,
-      contentText: null,
-      discussions: [],
+      contentText: "A question I've been chewing on for months.",
+      linkedItem: null,
       sourceType: "hacker_news_post",
-      title: "Filing the corners off my MacBooks",
+      title: "Ask HN: How do you stay sane?",
       comments: [
         {
           author: "normanvalentine",
@@ -257,7 +259,7 @@ describe("ReaderPage", () => {
     };
 
     useQueryMock.mockReturnValue({
-      data: { item: discussionAsItem },
+      data: { item: selfPost },
       error: null,
       isLoading: false,
     });
@@ -267,6 +269,9 @@ describe("ReaderPage", () => {
     expect(screen.getByText("normanvalentine")).toBeInTheDocument();
     expect(
       screen.getByText("Original poster's comment on their own thread."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/A question I've been chewing on/),
     ).toBeInTheDocument();
   });
 });

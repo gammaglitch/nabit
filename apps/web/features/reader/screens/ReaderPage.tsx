@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/features/shared/components/Icon";
 import { useStarred } from "@/features/shared/hooks/useStarred";
 import {
+  hostname,
   sourceColor,
   sourceLabel,
   timeAgo,
@@ -72,24 +73,20 @@ export default function ReaderPage({ id }: { id: number }) {
   const raw = detailQuery.data.item;
   const item = toDisplayItem(raw);
   const isThread = item.source === "hn" || item.source === "reddit";
-  const markdown = raw.contentMarkdown ?? raw.contentText ?? "";
+  const linkedItem = raw.linkedItem;
+  const hasLinkedArticle = isThread && linkedItem !== null;
+  // Threads without a linked article show the post text in an "Original post"
+  // blockquote (excerpt), so the main markdown slot is only used for the
+  // attached article (threads) or the item's own extracted body (articles).
+  const markdown = hasLinkedArticle
+    ? (linkedItem.contentMarkdown ?? linkedItem.contentText ?? "")
+    : isThread
+      ? ""
+      : (raw.contentMarkdown ?? raw.contentText ?? "");
   const srcCol = sourceColor(item.source);
   const starred = isStarred(item.id);
   const comments = raw.comments;
-  const discussions = raw.discussions;
-
-  // Merge discussion comments too, so HN/Reddit threads attached to an article show their trees
-  const allCommentGroups =
-    discussions.length > 0
-      ? discussions
-      : comments.length > 0
-        ? [
-            {
-              ...raw,
-              comments,
-            },
-          ]
-        : [];
+  const hasOwnComments = comments.length > 0;
 
   return (
     <div
@@ -233,19 +230,16 @@ export default function ReaderPage({ id }: { id: number }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isThread
+          gridTemplateColumns: hasOwnComments
             ? "minmax(0,1fr) minmax(0, 440px)"
-            : allCommentGroups.length > 0
-              ? "minmax(0,1fr) minmax(0, 440px)"
-              : "minmax(0,1fr)",
+            : "minmax(0,1fr)",
           height: "100%",
           overflow: "hidden",
         }}
       >
         <div
           style={{
-            borderRight:
-              allCommentGroups.length > 0 ? "1px solid var(--rule)" : "none",
+            borderRight: hasOwnComments ? "1px solid var(--rule)" : "none",
             overflow: "auto",
             background: "var(--bg)",
           }}
@@ -334,7 +328,7 @@ export default function ReaderPage({ id }: { id: number }) {
               </span>
             </div>
 
-            {isThread && item.excerpt && (
+            {isThread && !hasLinkedArticle && item.excerpt && (
               <div
                 style={{
                   borderLeft: "3px solid var(--accent)",
@@ -369,7 +363,40 @@ export default function ReaderPage({ id }: { id: number }) {
               </div>
             )}
 
-            {markdown.trim().length > 0 && !isThread ? (
+            {hasLinkedArticle && linkedItem && (
+              <div
+                style={{
+                  borderLeft: "3px solid var(--accent)",
+                  padding: "10px 16px",
+                  background: "var(--bg-alt)",
+                  marginBottom: 24,
+                  fontFamily: "var(--mono-font)",
+                  fontSize: 11,
+                  color: "var(--ink-3)",
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  alignItems: "baseline",
+                }}
+              >
+                <span
+                  style={{
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Linked article
+                </span>
+                <span style={{ color: "var(--ink-2)" }}>
+                  {linkedItem.title ?? linkedItem.sourceUrl ?? "Untitled"}
+                </span>
+                {linkedItem.sourceUrl && (
+                  <span>· {hostname(linkedItem.sourceUrl)}</span>
+                )}
+              </div>
+            )}
+
+            {markdown.trim().length > 0 ? (
               <MarkdownArticle markdown={markdown} />
             ) : !isThread ? (
               <p
@@ -413,7 +440,7 @@ export default function ReaderPage({ id }: { id: number }) {
           </div>
         </div>
 
-        {allCommentGroups.length > 0 && (
+        {hasOwnComments && (
           <div
             style={{
               overflow: "auto",
@@ -438,66 +465,10 @@ export default function ReaderPage({ id }: { id: number }) {
                 zIndex: 1,
               }}
             >
-              <span>
-                Comments ·{" "}
-                {allCommentGroups.reduce(
-                  (sum, g) => sum + (g.commentCount || g.comments.length),
-                  0,
-                )}
-              </span>
+              <span>Comments · {raw.commentCount || comments.length}</span>
               <span style={{ color: "var(--ink-4)" }}>archived</span>
             </div>
-            {allCommentGroups.map((group) => (
-              <div key={group.id}>
-                {discussions.length > 0 && (
-                  <div
-                    style={{
-                      fontFamily: "var(--mono-font)",
-                      fontSize: 10,
-                      letterSpacing: "0.12em",
-                      textTransform: "uppercase",
-                      color: "var(--ink-3)",
-                      padding: "14px 20px 6px",
-                      background: "var(--bg-alt)",
-                      display: "flex",
-                      gap: 8,
-                      alignItems: "center",
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: sourceColor(
-                          group.sourceType.startsWith("hacker_news")
-                            ? "hn"
-                            : group.sourceType.startsWith("reddit")
-                              ? "reddit"
-                              : "article",
-                        ),
-                      }}
-                    >
-                      {sourceLabel(
-                        group.sourceType.startsWith("hacker_news")
-                          ? "hn"
-                          : group.sourceType.startsWith("reddit")
-                            ? "reddit"
-                            : "article",
-                      )}
-                    </span>
-                    {group.sourceUrl && (
-                      <a
-                        href={group.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ color: "var(--ink-2)" }}
-                      >
-                        Open ↗
-                      </a>
-                    )}
-                  </div>
-                )}
-                <CommentTree comments={group.comments} />
-              </div>
-            ))}
+            <CommentTree comments={comments} />
           </div>
         )}
       </div>

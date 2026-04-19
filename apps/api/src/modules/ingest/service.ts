@@ -181,29 +181,13 @@ export class IngestService implements IngestServiceContract {
       preferredExtraction = preferExtraction(preferredExtraction, attempt);
     }
 
-    let sourceItem: IngestResult | null = null;
-    let subjectItemId: number | null = null;
-    let subjectFetchError: string | null = null;
-    const linkedUrl = !input.skipLinkedUrls
-      ? pickFirstLinkedUrl(preferredExtraction?.linkedUrls)
-      : null;
-    if (linkedUrl) {
-      try {
-        sourceItem = await this.ingestInternal({
-          skipLinkedUrls: true,
-          url: linkedUrl,
-        });
-        subjectItemId = sourceItem.itemId;
-      } catch (error) {
-        subjectFetchError =
-          error instanceof Error ? error.message : "Unknown error";
-      }
-    }
-
+    // The archived item is always primary (subjectItemId=null). If the ingestor
+    // surfaces a linked off-site URL (e.g. the article an HN thread points at),
+    // we auto-fetch it and attach it as a child pointing back at this item.
     const { created, itemId } = await this.ensureItem(db, {
       ...identity,
       sourceUrl: normalizedUrl,
-      subjectItemId,
+      subjectItemId: null,
     });
 
     let latestExtractionId: number | null = null;
@@ -233,10 +217,37 @@ export class IngestService implements IngestServiceContract {
       latestExtractionId = storedExtraction.id;
     }
 
+    let sourceItem: IngestResult | null = null;
+    let linkedFetchError: string | null = null;
+    const linkedUrl = !input.skipLinkedUrls
+      ? pickFirstLinkedUrl(preferredExtraction?.linkedUrls)
+      : null;
+    if (linkedUrl) {
+      try {
+        sourceItem = await this.ingestInternal({
+          skipLinkedUrls: true,
+          url: linkedUrl,
+        });
+        // Only link newly-created children. If the user had already archived
+        // this URL standalone, respect that earlier intent and leave it as a
+        // top-level item rather than silently demoting it.
+        if (sourceItem.created) {
+          await db
+            .update(itemsTable)
+            .set({ subjectItemId: itemId })
+            .where(eq(itemsTable.id, sourceItem.itemId));
+          sourceItem = { ...sourceItem, subjectItemId: itemId };
+        }
+      } catch (error) {
+        linkedFetchError =
+          error instanceof Error ? error.message : "Unknown error";
+      }
+    }
+
     if (preferredExtraction && preferredExtraction.status !== "failed") {
       await this.applyExtraction(db, {
         extraction: preferredExtraction,
-        extraMetadata: subjectFetchError ? { subjectFetchError } : undefined,
+        extraMetadata: linkedFetchError ? { linkedFetchError } : undefined,
         fallbackIdentity: {
           ...identity,
           sourceUrl: normalizedUrl,
@@ -255,7 +266,7 @@ export class IngestService implements IngestServiceContract {
       sourceItem,
       sourceType: preferredExtraction?.sourceType ?? identity.sourceType,
       status: preferredExtraction?.status ?? "failed",
-      subjectItemId,
+      subjectItemId: null,
     };
   }
 
@@ -404,7 +415,7 @@ export class IngestService implements IngestServiceContract {
       throw new Error(`Item ${input.id} not found`);
     }
 
-    const [snapshots, comments, itemTagRows, discussionRows] =
+    const [snapshots, comments, itemTagRows, linkedItemRows] =
       await Promise.all([
         db
           .select()
@@ -428,7 +439,8 @@ export class IngestService implements IngestServiceContract {
           .select()
           .from(itemsTable)
           .where(eq(itemsTable.subjectItemId, input.id))
-          .orderBy(desc(itemsTable.ingestedAt)),
+          .orderBy(desc(itemsTable.ingestedAt))
+          .limit(1),
       ]);
 
     const snapshotIds = snapshots.map((snapshot) => snapshot.id);
@@ -441,44 +453,10 @@ export class IngestService implements IngestServiceContract {
             .where(inArray(extractionsTable.snapshotId, snapshotIds))
             .orderBy(desc(extractionsTable.extractedAt));
 
-    const discussionSummaries = await this.summarizeItemRows(
+    const [linkedItem = null] = await this.summarizeItemRows(
       db,
-      discussionRows,
+      linkedItemRows,
     );
-
-    const discussionIds = discussionSummaries.map((row) => row.id);
-    const discussionCommentRows =
-      discussionIds.length === 0
-        ? []
-        : await db
-            .select()
-            .from(commentsTable)
-            .where(inArray(commentsTable.itemId, discussionIds))
-            .orderBy(commentsTable.path);
-
-    const commentsByDiscussion = new Map<
-      number,
-      Array<(typeof discussionCommentRows)[number]>
-    >();
-    for (const comment of discussionCommentRows) {
-      const existing = commentsByDiscussion.get(comment.itemId) ?? [];
-      existing.push(comment);
-      commentsByDiscussion.set(comment.itemId, existing);
-    }
-
-    const discussions = discussionSummaries.map((summary) => ({
-      ...summary,
-      comments: (commentsByDiscussion.get(summary.id) ?? []).map((comment) => ({
-        author: comment.author,
-        contentText: comment.contentText,
-        externalId: comment.externalId,
-        id: comment.id,
-        metadata: (comment.metadata ?? {}) as Record<string, unknown>,
-        parentExternalId: comment.parentExternalId,
-        path: comment.path,
-        sourceCreatedAt: comment.sourceCreatedAt?.toISOString() ?? null,
-      })),
-    }));
 
     return {
       item: {
@@ -499,7 +477,7 @@ export class IngestService implements IngestServiceContract {
           path: comment.path,
           sourceCreatedAt: comment.sourceCreatedAt?.toISOString() ?? null,
         })),
-        discussions,
+        linkedItem,
         extractions: extractions.map((extraction) => ({
           errorMessage: extraction.errorMessage,
           extractedAt: extraction.extractedAt.toISOString(),

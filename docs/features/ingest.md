@@ -75,21 +75,21 @@ Defined in `apps/api/src/db/schema.ts`:
 
 ## Linked items (HN / Reddit → article)
 
-When a Hacker News or Reddit ingest finds an off-site URL on the submission, the service ingests that URL **first** as a standalone article, then creates the discussion item with `subjectItemId` pointing at the article. One article, many possible discussions — the FK lives on the discussion side.
+The item the user explicitly archived is always the **primary** (`subjectItemId = null`). When a Hacker News or Reddit ingest finds an off-site URL on the submission, that URL is auto-fetched as a **child** and its `subjectItemId` points back at the primary discussion item. This way the list view shows the thread (what the user asked for) with an "HN" / "RDT" badge, and the reader view pulls in the attached article body alongside the thread comments.
 
-- **Off-site filter.** Each extractor filters before emitting `linkedUrls`. HN drops `news.ycombinator.com`. Reddit drops `reddit.com` / `www.reddit.com` / `old.reddit.com` / `redd.it` / `i.redd.it` / `v.redd.it` / `preview.redd.it`, and also skips self-posts (`post.is_self === true`). Only the first valid URL is used — discussions have at most one subject.
-- **Two-phase flow inside `ingest()`.** The service runs `capture()` and `extract()` in memory first (no DB writes), then calls `ingestInternal({ skipLinkedUrls: true })` for the subject URL, then calls `ensureItem` for the discussion with `subjectItemId` already set, then persists snapshots and extractions.
-- **Depth cap.** `skipLinkedUrls: true` is only set on the internal subject recursion, so the subject ingest cannot itself trigger a further subject ingest. Grandchildren can't happen, and the public `ingest()` method always kicks off a top-level call.
-- **Subject-fetch failure isolation.** If the subject ingest throws, the discussion ingest still completes with `subjectItemId = null` and `metadata.subjectFetchError` set to the error message. Retry later by re-ingesting the discussion URL.
-- **Last-writer-wins on update.** Re-ingesting a discussion updates its `subjectItemId` to whatever the current capture produces. `ensureItem` only writes `subjectItemId` during update when the new value is non-null, so a transient subject-fetch failure won't clobber an existing good link.
-- **IngestResult shape.** Every successful ingest returns a `sourceItem` field — either the full nested `IngestResult` for the subject, or `null` for items without one (articles, tweets, self-posts).
+- **Off-site filter.** Each extractor filters before emitting `linkedUrls`. HN drops `news.ycombinator.com`. Reddit drops `reddit.com` / `www.reddit.com` / `old.reddit.com` / `redd.it` / `i.redd.it` / `v.redd.it` / `preview.redd.it`, and also skips self-posts (`post.is_self === true`). Only the first valid URL is used — a discussion has at most one attached article.
+- **Order of operations inside `ingest()`.** The service runs `capture()` and `extract()` for the primary in memory, then `ensureItem` inserts/updates the primary with `subjectItemId = null`, then persists its snapshots and extractions. Only after that does it recursively call `ingestInternal({ skipLinkedUrls: true })` for the off-site URL and, if that ingest just **created** a new row, patch its `subjectItemId` to the primary's id via a direct `UPDATE`.
+- **Depth cap.** `skipLinkedUrls: true` is only set on the internal child recursion, so a child ingest cannot itself trigger a further child ingest. Grandchildren can't happen, and the public `ingest()` method always kicks off a top-level call.
+- **Respect pre-existing direct archives.** If the user had already archived the off-site URL standalone (`sourceItem.created === false`), the child link is **not** written — the pre-existing item stays a top-level row in the list. In that case there is no recorded link between the two items. Auto-fetched children that are newly created during an HN/Reddit ingest are the only items that end up with a non-null `subjectItemId`.
+- **Linked-fetch failure isolation.** If the child ingest throws, the primary ingest still completes normally. The error is written onto the primary as `metadata.linkedFetchError`. Retry later by re-ingesting the discussion URL.
+- **IngestResult shape.** Every successful ingest returns a `sourceItem` field — for HN/Reddit threads this is the nested `IngestResult` of the auto-fetched child article (or `null` if there was no off-site URL). The outer ingest's own `subjectItemId` is always `null`.
 
 ## Markdown
 
 Items carry two body fields: `contentText` (plain text for search) and `contentMarkdown` (the Obsidian-ready version).
 
 - **Generic (`readability`)** — parses `Readability.content` (the article HTML) through Turndown with ATX headings, hyphen bullet markers, inlined links, and fenced code blocks. Stored on the item as `content_markdown`.
-- **Hacker News (`hn_algolia_json`)** — `post.text` is HTML; we turndown it. Self-posts get markdown; link posts leave it null (the article is a separate item via `subjectItemId`).
+- **Hacker News (`hn_algolia_json`)** — `post.text` is HTML; we turndown it. Self-posts get markdown; link posts leave it null (the article is a separate child item that points back at the thread via `subjectItemId`).
 - **Reddit (`reddit_json`)** — `post.selftext` is already markdown, stored as-is in both `contentText` and `contentMarkdown`.
 - **Tweet** — left as plain text for now.
 
@@ -112,4 +112,4 @@ Non-`text/html` content types are short-circuited to `failed` before Readability
 - **`tweet` requires an external capturer.** No server-side X fetch path; depends on the tampermonkey script having the GraphQL payload.
 - **Generic has no headless fallback in production.** The hook is wired (`needsBrowserCapture` + `HEADLESS_BROWSER_CAPTURE_URL`) but there's no container running behind it yet, so JS-only pages still come back as `failed`.
 - **`list()` is unpaginated.** It computes `total` but selects every matching row.
-- **Subject fetch failures don't get a retry queue.** They surface as `metadata.subjectFetchError` on the discussion; there's no scheduled retry — you have to re-ingest manually.
+- **Linked fetch failures don't get a retry queue.** They surface as `metadata.linkedFetchError` on the primary item; there's no scheduled retry — you have to re-ingest manually.

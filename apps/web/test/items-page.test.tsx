@@ -2,99 +2,107 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import ItemsRoute from "@/app/items/page";
 
-const invalidateList = vi.fn();
-const invalidateGet = vi.fn();
-const invalidateTagsList = vi.fn();
-const mutateIngest = vi.fn();
-
-const mutationStub = () => ({
-  isPending: false,
-  mutate: vi.fn(),
-  mutateAsync: vi.fn().mockResolvedValue({ id: 0, name: "stub" }),
-});
+const {
+  invalidateList,
+  invalidateGet,
+  invalidateTagsList,
+  mutateIngest,
+} = vi.hoisted(() => ({
+  invalidateList: vi.fn(),
+  invalidateGet: vi.fn(),
+  invalidateTagsList: vi.fn(),
+  mutateIngest: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
-vi.mock("@/lib/trpc/react", () => ({
-  trpc: {
-    useUtils() {
-      return {
-        ingest: {
-          get: { invalidate: invalidateGet },
-          list: { invalidate: invalidateList },
-        },
-        tags: { list: { invalidate: invalidateTagsList } },
-      };
-    },
-    ingest: {
+vi.mock("@/lib/trpc/react", () => {
+  const mutationStub = () => ({
+    isPending: false,
+    mutate: vi.fn(),
+    mutateAsync: vi.fn().mockResolvedValue({ id: 0, name: "stub" }),
+  });
+  return {
+    trpc: {
+      useUtils() {
+        return {
+          ingest: {
+            get: { invalidate: invalidateGet },
+            list: { invalidate: invalidateList },
+          },
+          tags: { list: { invalidate: invalidateTagsList } },
+        };
+      },
       ingest: {
-        useMutation() {
-          return {
-            error: null,
-            isPending: false,
-            mutate: mutateIngest,
-            mutateAsync: vi.fn(),
-          };
+        ingest: {
+          useMutation() {
+            return {
+              error: null,
+              isPending: false,
+              mutate: mutateIngest,
+              mutateAsync: vi.fn(),
+            };
+          },
         },
-      },
-      get: {
-        useQuery(_input: { id: number }, options?: { enabled?: boolean }) {
-          if (!options?.enabled) {
+        get: {
+          useQuery(_input: { id: number }, options?: { enabled?: boolean }) {
+            if (!options?.enabled) {
+              return { data: undefined, error: null, isLoading: false };
+            }
             return { data: undefined, error: null, isLoading: false };
-          }
-          return { data: undefined, error: null, isLoading: false };
+          },
+        },
+        list: {
+          useQuery() {
+            return {
+              data: {
+                items: [
+                  {
+                    author: "delta",
+                    commentCount: 1,
+                    contentMarkdown: "Long-form extracted article body.",
+                    contentText: "Long-form extracted article body.",
+                    externalId: "https://example.com/story",
+                    id: 1,
+                    ingestedAt: "2026-04-04T10:00:00.000Z",
+                    latestExtractionStatus: "success",
+                    metadata: {},
+                    snapshotCount: 1,
+                    sourceCreatedAt: "2026-04-03T12:00:00.000Z",
+                    sourceType: "webpage",
+                    sourceUrl: "https://example.com/story",
+                    subjectItemId: null,
+                    tags: [{ id: 1, name: "javascript" }],
+                    title: "Archiveable Story",
+                  },
+                ],
+                total: 1,
+              },
+              error: null,
+              isLoading: false,
+            };
+          },
         },
       },
-      list: {
-        useQuery() {
-          return {
-            data: {
-              items: [
-                {
-                  author: "delta",
-                  commentCount: 1,
-                  contentMarkdown: "Long-form extracted article body.",
-                  contentText: "Long-form extracted article body.",
-                  externalId: "https://example.com/story",
-                  id: 1,
-                  ingestedAt: "2026-04-04T10:00:00.000Z",
-                  latestExtractionStatus: "success",
-                  metadata: {},
-                  snapshotCount: 1,
-                  sourceCreatedAt: "2026-04-03T12:00:00.000Z",
-                  sourceType: "webpage",
-                  sourceUrl: "https://example.com/story",
-                  subjectItemId: null,
-                  tags: [{ id: 1, name: "javascript" }],
-                  title: "Archiveable Story",
-                },
-              ],
-              total: 1,
-            },
-            error: null,
-            isLoading: false,
-          };
+      tags: {
+        list: {
+          useQuery() {
+            return {
+              data: { tags: [{ id: 1, name: "javascript" }] },
+              error: null,
+              isLoading: false,
+            };
+          },
         },
+        addToItem: { useMutation: mutationStub },
+        removeFromItem: { useMutation: mutationStub },
+        create: { useMutation: mutationStub },
       },
     },
-    tags: {
-      list: {
-        useQuery() {
-          return {
-            data: { tags: [{ id: 1, name: "javascript" }] },
-            error: null,
-            isLoading: false,
-          };
-        },
-      },
-      addToItem: { useMutation: mutationStub },
-      removeFromItem: { useMutation: mutationStub },
-      create: { useMutation: mutationStub },
-    },
-  },
-}));
+  };
+});
 
 describe("items page", () => {
   test("renders the brutalist library with the archived item title", () => {

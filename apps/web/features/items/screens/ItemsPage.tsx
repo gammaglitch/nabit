@@ -95,8 +95,9 @@ export default function ItemsPage() {
 
   const rawItems = listQuery.data?.items ?? [];
 
-  // Filter out discussion items (those pointing to a subject article).
-  // Articles aggregate their own discussions on the detail view.
+  // Hide auto-fetched child items (articles attached to an HN/Reddit thread).
+  // The primary thread item is what the user explicitly archived; the child
+  // article is rendered inside that thread's reader view.
   const primaryItems = useMemo(
     () => rawItems.filter((i) => i.subjectItemId === null),
     [rawItems],
