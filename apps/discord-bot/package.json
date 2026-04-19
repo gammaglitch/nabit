@@ -1,0 +1,21 @@
+{
+  "name": "@repo/discord-bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "bun run lint && bun run typecheck",
+    "dev": "bun --watch index.ts",
+    "fix": "biome check --write .",
+    "lint": "biome lint .",
+    "start": "bun index.ts",
+    "style:check": "biome check --formatter-enabled=true --linter-enabled=false .",
+    "typecheck": "tsc --project tsconfig.json",
+    "verify": "bun run check && bun run style:check"
+  },
+  "dependencies": {
+    "discord.js": "^14.25.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.23"
+  }
+}
