@@ -35,9 +35,17 @@ export function ListRow({
   const srcCol = sourceColor(item.source);
 
   return (
-    <button
-      type="button"
+    // biome-ignore lint/a11y/useSemanticElements: row contains nested <button>s (StarButton, + tag) so the outer element can't itself be a <button>
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -159,6 +167,6 @@ export function ListRow({
       >
         {timeAgo(item.savedAt)}
       </div>
-    </button>
+    </div>
   );
 }
