@@ -28,6 +28,20 @@ from across the web — articles, Hacker News threads, Reddit threads, tweets.
 - **Search-first brutalist UI.** Dense list + split-view triage with
   keyboard navigation, tags, and a ⌘K capture command from anywhere.
 
+## Roadmap
+
+Rough sketch of what's on deck. Not committed, not ordered.
+
+- **Queue-mode ingestion.** Submit a URL and forget it. A background
+  worker drains the queue, so slow extractors don't block the caller.
+- **Ingest by email.** Forward or BCC a message to a dedicated address
+  and any URLs inside get nabbed. Useful for newsletters, share sheets
+  on devices without the extension, and mail-based workflows.
+- **TL;DR mode.** Optional LLM-generated summaries per item.
+- **Obsidian plugin.** One-way sync from nabit into an Obsidian vault.
+- **Browser extension, act II.** Figure out what the extension should
+  actually be.
+
 ## Stack
 
 - **API**: Fastify + tRPC + Drizzle ORM (Bun runtime)
