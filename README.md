@@ -66,15 +66,39 @@ Useful scripts (run from the repo root):
 
 ## Running in Docker
 
-Build images from the repo root:
+For a local, one-command stack:
+
+```bash
+cp .env.example .env
+# fill in the Supabase values in .env
+docker compose up --build
+```
+
+This starts:
+
+- `db` on local Postgres
+- `api` on `http://127.0.0.1:3001`
+- `web` on `http://127.0.0.1:3000`
+
+If you want to use a hosted Postgres instance instead of the local `db`
+container, set `DATABASE_URL` in `.env` and use:
+
+```bash
+docker compose -f compose.yml -f compose.hosted-db.yml up --build
+```
+
+You can still build the images manually from the repo root:
 
 ```bash
 docker build -f docker/api.Dockerfile -t nabit-api .
-docker build -f docker/web.Dockerfile -t nabit-web .
+docker build \
+  -f docker/web.Dockerfile \
+  --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3001/trpc \
+  --build-arg NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co \
+  --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key \
+  --build-arg NEXT_PUBLIC_AUTH_REQUIRED=true \
+  -t nabit-web .
 ```
-
-Then run each container with the env vars below. How you wire them
-together (compose file, Kubernetes, a single VM, etc.) is up to you.
 
 ## Environment variables
 
