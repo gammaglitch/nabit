@@ -14,6 +14,7 @@ export type ItemIdentity = {
 
 export type ExtractedComment = {
   author?: string | null;
+  contentMarkdown?: string | null;
   contentText: string;
   externalId?: string | null;
   metadata?: Record<string, unknown>;
