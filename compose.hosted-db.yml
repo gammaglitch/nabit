@@ -1,0 +1,9 @@
+services:
+  db:
+    profiles:
+      - local-only
+
+  api:
+    depends_on: {}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
