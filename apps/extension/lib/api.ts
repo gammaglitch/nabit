@@ -15,13 +15,19 @@ interface IngestItem {
   ingestor?: "tweet" | "reddit" | "hacker_news" | "generic";
 }
 
-interface IngestResult {
-  itemId: number;
-  created: boolean;
+interface IngestJob {
+  id: number;
+  status: "queued" | "processing" | "success" | "failed";
+  url: string;
+}
+
+interface EnqueueResult {
+  job: IngestJob;
+  reused: boolean;
 }
 
 interface BatchResult {
-  results: IngestResult[];
+  results: EnqueueResult[];
 }
 
 export async function ingestBatch(items: IngestItem[]): Promise<BatchResult> {

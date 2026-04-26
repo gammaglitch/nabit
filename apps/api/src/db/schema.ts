@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   customType,
   foreignKey,
   index,
@@ -115,6 +117,10 @@ export const ingestJobsTable = schema.table(
     index("idx_ingest_jobs_status_run_after").on(table.status, table.runAfter),
     index("idx_ingest_jobs_created_at").on(table.createdAt),
     index("idx_ingest_jobs_item_id").on(table.itemId),
+    check(
+      "ingest_jobs_status_check",
+      sql`${table.status} in ('queued', 'processing', 'success', 'failed')`,
+    ),
   ],
 );
 

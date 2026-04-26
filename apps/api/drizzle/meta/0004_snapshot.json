@@ -467,7 +467,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ingest_jobs_status_check": {
+          "name": "ingest_jobs_status_check",
+          "value": "\"nabit\".\"ingest_jobs\".\"status\" in ('queued', 'processing', 'success', 'failed')"
+        }
+      },
       "isRLSEnabled": false
     },
     "nabit.item_tags": {

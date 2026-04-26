@@ -55,7 +55,18 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
   const jobsQuery = trpc.ingest.jobs.useQuery(
     { limit: 20 },
     {
-      refetchInterval: 2500,
+      // Poll fast while there's active work; back off to a slow heartbeat
+      // when the queue is fully drained so we still notice jobs enqueued
+      // from other sessions (discord bot, REST clients) without burning
+      // requests every 2.5s for nothing.
+      refetchInterval: (query) => {
+        const data = query.state.data;
+        if (!data) return 2500;
+        const hasActive = data.jobs.some(
+          (job) => job.status === "queued" || job.status === "processing",
+        );
+        return hasActive ? 2500 : 30_000;
+      },
     },
   );
 
@@ -68,11 +79,18 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
 
   useEffect(() => {
     let sawNewSuccess = false;
+    const visibleIds = new Set<number>();
     for (const job of jobs) {
+      visibleIds.add(job.id);
       if (job.status !== "success") continue;
       if (seenSuccessful.current.has(job.id)) continue;
       seenSuccessful.current.add(job.id);
       sawNewSuccess = true;
+    }
+    // Drop tracked ids that have rolled out of the visible window so the
+    // set stays bounded over long-lived sessions.
+    for (const id of seenSuccessful.current) {
+      if (!visibleIds.has(id)) seenSuccessful.current.delete(id);
     }
     if (sawNewSuccess) {
       void utils.ingest.list.invalidate();

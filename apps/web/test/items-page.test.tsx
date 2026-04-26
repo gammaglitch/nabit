@@ -2,12 +2,12 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import ItemsRoute from "@/app/items/page";
 
-const { invalidateList, invalidateGet, invalidateTagsList, mutateIngest } =
+const { invalidateList, invalidateGet, invalidateTagsList, mutateEnqueue } =
   vi.hoisted(() => ({
     invalidateList: vi.fn(),
     invalidateGet: vi.fn(),
     invalidateTagsList: vi.fn(),
-    mutateIngest: vi.fn(),
+    mutateEnqueue: vi.fn(),
   }));
 
 vi.mock("next/navigation", () => ({
@@ -38,7 +38,7 @@ vi.mock("@/lib/trpc/react", () => {
             return {
               error: null,
               isPending: false,
-              mutate: mutateIngest,
+              mutate: mutateEnqueue,
               mutateAsync: vi.fn(),
             };
           },
@@ -48,7 +48,7 @@ vi.mock("@/lib/trpc/react", () => {
             return {
               error: null,
               isPending: false,
-              mutate: mutateIngest,
+              mutate: mutateEnqueue,
               mutateAsync: vi.fn(),
             };
           },
