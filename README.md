@@ -78,6 +78,7 @@ This starts:
 
 - `db` on local Postgres
 - `api` on `http://127.0.0.1:3001`
+- `ingest-worker` for background captures
 - `web` on `http://127.0.0.1:3000`
 
 If you want to use a hosted Postgres instance instead of the local `db`

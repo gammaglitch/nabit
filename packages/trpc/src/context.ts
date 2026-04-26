@@ -7,14 +7,20 @@ import type {
 import type {
   DeleteInputDTO,
   DeleteOutputDTO,
+  EnqueueIngestInputDTO,
+  EnqueueIngestOutputDTO,
+  GetIngestJobInputDTO,
   GetItemInputDTO,
   IngestBatchInputDTO,
   IngestBatchOutputDTO,
   IngestInputDTO,
+  IngestJobOutputDTO,
   IngestOutputDTO,
   ItemDetailOutputDTO,
   ItemListInputDTO,
   ItemListOutputDTO,
+  ListIngestJobsInputDTO,
+  ListIngestJobsOutputDTO,
 } from "./modules/ingest/dto";
 import type {
   AddTagToItemInputDTO,
@@ -62,6 +68,15 @@ export interface TrpcServices {
     ingestBatch(
       input: IngestBatchInputDTO,
     ): IngestBatchOutputDTO | Promise<IngestBatchOutputDTO>;
+    enqueue(
+      input: EnqueueIngestInputDTO,
+    ): EnqueueIngestOutputDTO | Promise<EnqueueIngestOutputDTO>;
+    getJob(
+      input: GetIngestJobInputDTO,
+    ): IngestJobOutputDTO | Promise<IngestJobOutputDTO>;
+    listJobs(
+      input: ListIngestJobsInputDTO,
+    ): ListIngestJobsOutputDTO | Promise<ListIngestJobsOutputDTO>;
     list(
       input: ItemListInputDTO,
     ): ItemListOutputDTO | Promise<ItemListOutputDTO>;

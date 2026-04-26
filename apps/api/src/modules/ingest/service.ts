@@ -4,6 +4,7 @@ import type { DatabaseState } from "../../db/client";
 import {
   commentsTable,
   extractionsTable,
+  ingestJobsTable,
   itemsTable,
   itemTagsTable,
   rawSnapshotsTable,
@@ -25,6 +26,8 @@ import {
 type IngestServiceContract = TrpcServices["ingest"];
 type Database = NonNullable<DatabaseState["db"]>;
 
+type IngestJobStatus = "queued" | "processing" | "success" | "failed";
+
 type IngestResult = {
   created: boolean;
   extractionId: number | null;
@@ -38,12 +41,33 @@ type IngestResult = {
   subjectItemId: number | null;
 };
 
+type IngestJobRow = typeof ingestJobsTable.$inferSelect;
+
+type ClaimedIngestJob = {
+  attempts: number;
+  id: number;
+  ingestor: string | null;
+  maxAttempts: number;
+  payload: unknown;
+  url: string;
+};
+
 type InternalIngestInput = {
   ingestor?: IngestorName | null;
   payload?: unknown;
   skipLinkedUrls?: boolean;
   url: string;
 };
+
+type WorkerResult =
+  | {
+      jobId: number;
+      processed: true;
+      status: "success" | "failed" | "queued";
+    }
+  | {
+      processed: false;
+    };
 
 function requireDatabase(database: DatabaseState): Database {
   if (!database.db) {
@@ -127,6 +151,49 @@ function toSummary(
   };
 }
 
+function toJob(row: IngestJobRow) {
+  return {
+    attempts: row.attempts,
+    createdAt: row.createdAt.toISOString(),
+    errorMessage: row.errorMessage,
+    finishedAt: row.finishedAt?.toISOString() ?? null,
+    id: row.id,
+    ingestor: row.ingestor as IngestorName | null,
+    itemId: row.itemId,
+    maxAttempts: row.maxAttempts,
+    result: (row.result as IngestResult | null) ?? null,
+    runAfter: row.runAfter.toISOString(),
+    status: row.status as IngestJobStatus,
+    updatedAt: row.updatedAt.toISOString(),
+    url: row.url,
+  };
+}
+
+function rowsFromExecute<T>(result: unknown): T[] {
+  if (Array.isArray(result)) {
+    return result as T[];
+  }
+
+  const maybeRows = result as { rows?: unknown[] } | null;
+  if (maybeRows && Array.isArray(maybeRows.rows)) {
+    return maybeRows.rows as T[];
+  }
+
+  if (
+    result &&
+    typeof (result as { [Symbol.iterator]?: unknown })[Symbol.iterator] ===
+      "function"
+  ) {
+    return Array.from(result as Iterable<T>);
+  }
+
+  return [];
+}
+
+function retryDelayMs(attempts: number) {
+  return Math.min(60_000, 2 ** Math.max(0, attempts - 1) * 5_000);
+}
+
 export class IngestService implements IngestServiceContract {
   constructor(
     private readonly database: DatabaseState,
@@ -139,6 +206,149 @@ export class IngestService implements IngestServiceContract {
     url: string;
   }): Promise<IngestResult> {
     return this.ingestInternal({ ...input, skipLinkedUrls: false });
+  }
+
+  async enqueue(input: {
+    ingestor?: IngestorName | null;
+    payload?: unknown;
+    url: string;
+  }) {
+    const db = requireDatabase(this.database);
+    const requestedUrl = normalizeSourceUrl(input.url);
+    const ingestorName = resolveIngestorName(
+      requestedUrl,
+      input.ingestor ?? null,
+    );
+
+    const [job] = await db
+      .insert(ingestJobsTable)
+      .values({
+        ingestor: ingestorName,
+        payload: input.payload,
+        status: "queued",
+        url: requestedUrl,
+      })
+      .returning();
+
+    return { job: toJob(job) };
+  }
+
+  async getJob(input: { id: number }) {
+    const db = requireDatabase(this.database);
+    const [job] = await db
+      .select()
+      .from(ingestJobsTable)
+      .where(eq(ingestJobsTable.id, input.id))
+      .limit(1);
+
+    if (!job) {
+      throw new Error(`Ingest job ${input.id} not found`);
+    }
+
+    return toJob(job);
+  }
+
+  async listJobs(input: { limit?: number } = {}) {
+    const db = requireDatabase(this.database);
+    const jobs = await db
+      .select()
+      .from(ingestJobsTable)
+      .orderBy(desc(ingestJobsTable.createdAt))
+      .limit(input.limit ?? 50);
+
+    return {
+      jobs: jobs.map(toJob),
+    };
+  }
+
+  async processNextJob(workerId: string): Promise<WorkerResult> {
+    const db = requireDatabase(this.database);
+    const [job] = await db.transaction(async (tx) => {
+      const rows = await tx.execute(sql`
+        with next_job as (
+          select id
+          from ${ingestJobsTable}
+          where status = 'queued'
+            and run_after <= now()
+          order by created_at
+          for update skip locked
+          limit 1
+        )
+        update ${ingestJobsTable}
+        set
+          status = 'processing',
+          locked_by = ${workerId},
+          locked_at = now(),
+          attempts = attempts + 1,
+          updated_at = now()
+        where id in (select id from next_job)
+        returning
+          id,
+          url,
+          ingestor,
+          payload,
+          attempts,
+          max_attempts as "maxAttempts"
+      `);
+
+      return rowsFromExecute<ClaimedIngestJob>(rows);
+    });
+
+    if (!job) {
+      return { processed: false };
+    }
+
+    try {
+      const result = await this.ingestInternal({
+        ingestor: job.ingestor as IngestorName | null,
+        payload: job.payload,
+        skipLinkedUrls: false,
+        url: job.url,
+      });
+
+      await db
+        .update(ingestJobsTable)
+        .set({
+          errorMessage: null,
+          finishedAt: new Date(),
+          itemId: result.itemId,
+          lockedAt: null,
+          lockedBy: null,
+          result,
+          status: "success",
+          updatedAt: new Date(),
+        })
+        .where(eq(ingestJobsTable.id, job.id));
+
+      return {
+        jobId: job.id,
+        processed: true,
+        status: "success",
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      const willRetry = job.attempts < job.maxAttempts;
+      const status = willRetry ? "queued" : "failed";
+
+      await db
+        .update(ingestJobsTable)
+        .set({
+          errorMessage: message,
+          finishedAt: willRetry ? null : new Date(),
+          lockedAt: null,
+          lockedBy: null,
+          runAfter: new Date(Date.now() + retryDelayMs(job.attempts)),
+          status,
+          updatedAt: new Date(),
+        })
+        .where(eq(ingestJobsTable.id, job.id));
+
+      return {
+        jobId: job.id,
+        processed: true,
+        status,
+      };
+    }
   }
 
   private async ingestInternal(

@@ -11,6 +11,7 @@
     "fix": "biome check --write .",
     "lint": "biome lint .",
     "start": "bun src/index.ts",
+    "start:worker": "bun src/worker.ts",
     "style:check": "biome check --formatter-enabled=true --linter-enabled=false .",
     "test": "bun test",
     "typecheck": "tsc --project tsconfig.json",

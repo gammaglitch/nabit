@@ -8,6 +8,12 @@ export const IngestorName = z.enum([
 ]);
 
 export const ExtractionStatus = z.enum(["success", "partial", "failed"]);
+export const IngestJobStatus = z.enum([
+  "queued",
+  "processing",
+  "success",
+  "failed",
+]);
 
 const MetadataRecord = z.record(z.string(), z.unknown());
 
@@ -18,6 +24,7 @@ export const IngestItem = z.object({
 });
 
 export const IngestInput = IngestItem;
+export const EnqueueIngestInput = IngestItem;
 
 const IngestOutputBase = z.object({
   itemId: z.number(),
@@ -46,6 +53,40 @@ export const IngestBatchInput = z.object({
 
 export const IngestBatchOutput = z.object({
   results: z.array(IngestOutput),
+});
+
+export const IngestJobOutput = z.object({
+  id: z.number(),
+  status: IngestJobStatus,
+  url: z.string().url(),
+  ingestor: IngestorName.nullable(),
+  itemId: z.number().nullable(),
+  result: IngestOutput.nullable(),
+  errorMessage: z.string().nullable(),
+  attempts: z.number().int().nonnegative(),
+  maxAttempts: z.number().int().positive(),
+  runAfter: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  finishedAt: z.string().nullable(),
+});
+
+export const EnqueueIngestOutput = z.object({
+  job: IngestJobOutput,
+});
+
+export const GetIngestJobInput = z.object({
+  id: z.number(),
+});
+
+export const ListIngestJobsInput = z
+  .object({
+    limit: z.number().int().min(1).max(100).optional(),
+  })
+  .optional();
+
+export const ListIngestJobsOutput = z.object({
+  jobs: z.array(IngestJobOutput),
 });
 
 export const ItemListInput = z
@@ -123,6 +164,13 @@ export type IngestInputDTO = z.infer<typeof IngestInput>;
 export type IngestOutputDTO = z.infer<typeof IngestOutput>;
 export type IngestBatchInputDTO = z.infer<typeof IngestBatchInput>;
 export type IngestBatchOutputDTO = z.infer<typeof IngestBatchOutput>;
+export type EnqueueIngestInputDTO = z.infer<typeof EnqueueIngestInput>;
+export type EnqueueIngestOutputDTO = z.infer<typeof EnqueueIngestOutput>;
+export type GetIngestJobInputDTO = z.infer<typeof GetIngestJobInput>;
+export type IngestJobOutputDTO = z.infer<typeof IngestJobOutput>;
+export type IngestJobStatusDTO = z.infer<typeof IngestJobStatus>;
+export type ListIngestJobsInputDTO = z.infer<typeof ListIngestJobsInput>;
+export type ListIngestJobsOutputDTO = z.infer<typeof ListIngestJobsOutput>;
 export type IngestorNameDTO = z.infer<typeof IngestorName>;
 export type ExtractionStatusDTO = z.infer<typeof ExtractionStatus>;
 

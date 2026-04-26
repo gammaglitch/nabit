@@ -80,6 +80,44 @@ export const rawSnapshotsTable = schema.table(
   (table) => [index("idx_raw_snapshots_item_id").on(table.itemId)],
 );
 
+export const ingestJobsTable = schema.table(
+  "ingest_jobs",
+  (t) => ({
+    id: t.bigserial({ mode: "number" }).primaryKey(),
+    status: t.text("status").notNull().default("queued"),
+    url: t.text("url").notNull(),
+    ingestor: t.text("ingestor"),
+    payload: t.jsonb("payload"),
+    itemId: t
+      .bigint("item_id", { mode: "number" })
+      .references(() => itemsTable.id, { onDelete: "set null" }),
+    result: t.jsonb("result"),
+    errorMessage: t.text("error_message"),
+    attempts: t.integer("attempts").notNull().default(0),
+    maxAttempts: t.integer("max_attempts").notNull().default(3),
+    runAfter: t
+      .timestamp("run_after", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lockedBy: t.text("locked_by"),
+    lockedAt: t.timestamp("locked_at", { withTimezone: true }),
+    createdAt: t
+      .timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: t
+      .timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: t.timestamp("finished_at", { withTimezone: true }),
+  }),
+  (table) => [
+    index("idx_ingest_jobs_status_run_after").on(table.status, table.runAfter),
+    index("idx_ingest_jobs_created_at").on(table.createdAt),
+    index("idx_ingest_jobs_item_id").on(table.itemId),
+  ],
+);
+
 export const extractionsTable = schema.table(
   "extractions",
   (t) => ({
