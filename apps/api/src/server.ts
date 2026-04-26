@@ -83,13 +83,13 @@ export async function buildApp() {
       });
     }
 
-    const result = await app.services.ingest.ingest({
+    const result = await app.services.ingest.enqueue({
       ingestor: body.ingestor ?? null,
       payload: body.payload,
       url: body.url,
     });
 
-    return reply.status(result.created ? 201 : 200).send(result);
+    return reply.status(202).send(result);
   });
 
   app.post<{ Body: { items: IngestBody[] } }>(
@@ -105,15 +105,17 @@ export async function buildApp() {
         return reply.status(400).send({ error: "items array is required" });
       }
 
-      const result = await app.services.ingest.ingestBatch({
-        items: items.map((item) => ({
+      const results = [];
+      for (const item of items) {
+        const result = await app.services.ingest.enqueue({
           ingestor: item.ingestor ?? null,
           payload: item.payload,
           url: item.url,
-        })),
-      });
+        });
+        results.push(result);
+      }
 
-      return reply.send(result);
+      return reply.status(202).send({ results });
     },
   );
 

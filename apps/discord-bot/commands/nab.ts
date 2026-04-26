@@ -16,7 +16,7 @@ const INGEST_API_URL =
 const INGEST_API_TOKEN = process.env.NABIT_API_TOKEN;
 
 type IngestResult =
-  | { success: true; created: boolean; itemUrl?: string }
+  | { success: true; jobId: number; status: string; reused: boolean }
   | { success: false; message: string };
 
 async function ingestUrl(url: string): Promise<IngestResult> {
@@ -47,14 +47,21 @@ async function ingestUrl(url: string): Promise<IngestResult> {
     }
 
     const data = (await response.json()) as {
-      created?: boolean;
-      item?: { id?: string };
+      job?: { id?: number; status?: string };
+      reused?: boolean;
     };
-    const itemId = data.item?.id;
+    const job = data.job;
+    if (!job?.id) {
+      return {
+        success: false,
+        message: "Ingest API returned an unexpected response shape.",
+      };
+    }
     return {
       success: true,
-      created: Boolean(data.created),
-      itemUrl: itemId ? `${INGEST_API_URL}/items/${itemId}` : undefined,
+      jobId: job.id,
+      status: job.status ?? "queued",
+      reused: Boolean(data.reused),
     };
   } catch (error) {
     console.error("Ingest error:", error);
@@ -69,8 +76,8 @@ function formatSuccess(
   url: string,
   result: Extract<IngestResult, { success: true }>,
 ) {
-  const verb = result.created ? "Nabbed" : "Already known";
-  return `✅ ${verb}: ${url}`;
+  const verb = result.reused ? "Already in flight" : "Queued";
+  return `✅ ${verb} (#${result.jobId}): ${url}`;
 }
 
 export async function execute(interaction: ChatInputCommandInteraction) {

@@ -61,7 +61,10 @@ export const IngestJobOutput = z.object({
   url: z.string().url(),
   ingestor: IngestorName.nullable(),
   itemId: z.number().nullable(),
-  result: IngestOutput.nullable(),
+  // `.catch(null)` keeps historical jobs decodable when `IngestOutput` evolves
+  // — old result blobs that no longer match the current schema fall back to
+  // null instead of breaking the entire job list.
+  result: IngestOutput.nullable().catch(null),
   errorMessage: z.string().nullable(),
   attempts: z.number().int().nonnegative(),
   maxAttempts: z.number().int().positive(),
@@ -73,6 +76,10 @@ export const IngestJobOutput = z.object({
 
 export const EnqueueIngestOutput = z.object({
   job: IngestJobOutput,
+  // True when an in-flight job for the same URL already existed; clients
+  // can use this to distinguish "newly queued" from "piggybacking on an
+  // existing capture" without poking at attempts/status.
+  reused: z.boolean(),
 });
 
 export const GetIngestJobInput = z.object({

@@ -54,17 +54,17 @@ export default function App() {
       if (view === "tabs") {
         const items = tabs.filter((t) => selected.has(String(t.id)));
         const result = await ingestTabs(items);
-        const created = result.results.filter((r) => r.created).length;
+        const queued = result.results.filter((r) => !r.reused).length;
         setStatus({
-          message: `${created} new, ${result.results.length - created} existing`,
+          message: `${queued} queued, ${result.results.length - queued} already in flight`,
           error: false,
         });
       } else {
         const items = bookmarks.filter((b) => selected.has(b.id));
         const result = await ingestBookmarks(items);
-        const created = result.results.filter((r) => r.created).length;
+        const queued = result.results.filter((r) => !r.reused).length;
         setStatus({
-          message: `${created} new, ${result.results.length - created} existing`,
+          message: `${queued} queued, ${result.results.length - queued} already in flight`,
           error: false,
         });
       }

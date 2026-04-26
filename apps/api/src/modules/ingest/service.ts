@@ -1,5 +1,6 @@
 import type { TrpcServices } from "@repo/trpc";
-import { and, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
+import { and, desc, eq, inArray, lt, type SQL, sql } from "drizzle-orm";
 import type { DatabaseState } from "../../db/client";
 import {
   commentsTable,
@@ -169,30 +170,14 @@ function toJob(row: IngestJobRow) {
   };
 }
 
-function rowsFromExecute<T>(result: unknown): T[] {
-  if (Array.isArray(result)) {
-    return result as T[];
-  }
-
-  const maybeRows = result as { rows?: unknown[] } | null;
-  if (maybeRows && Array.isArray(maybeRows.rows)) {
-    return maybeRows.rows as T[];
-  }
-
-  if (
-    result &&
-    typeof (result as { [Symbol.iterator]?: unknown })[Symbol.iterator] ===
-      "function"
-  ) {
-    return Array.from(result as Iterable<T>);
-  }
-
-  return [];
-}
-
 function retryDelayMs(attempts: number) {
   return Math.min(60_000, 2 ** Math.max(0, attempts - 1) * 5_000);
 }
+
+// While a job is being processed we periodically refresh `locked_at` so the
+// reaper can distinguish a slow-but-alive worker from a dead one. Reaper's
+// stale threshold must comfortably exceed this — see worker.ts defaults.
+const HEARTBEAT_MS = 30_000;
 
 export class IngestService implements IngestServiceContract {
   constructor(
@@ -220,6 +205,26 @@ export class IngestService implements IngestServiceContract {
       input.ingestor ?? null,
     );
 
+    // Dedup: if there is already an in-flight job for this URL, reuse it
+    // rather than queueing duplicate work. Best-effort — there is a small
+    // race between SELECT and INSERT, but the downstream `ensureItem` is
+    // idempotent so duplicates are merely wasteful, not incorrect.
+    const [existing] = await db
+      .select()
+      .from(ingestJobsTable)
+      .where(
+        and(
+          eq(ingestJobsTable.url, requestedUrl),
+          inArray(ingestJobsTable.status, ["queued", "processing"]),
+        ),
+      )
+      .orderBy(desc(ingestJobsTable.createdAt))
+      .limit(1);
+
+    if (existing) {
+      return { job: toJob(existing), reused: true };
+    }
+
     const [job] = await db
       .insert(ingestJobsTable)
       .values({
@@ -230,7 +235,7 @@ export class IngestService implements IngestServiceContract {
       })
       .returning();
 
-    return { job: toJob(job) };
+    return { job: toJob(job), reused: false };
   }
 
   async getJob(input: { id: number }) {
@@ -242,7 +247,10 @@ export class IngestService implements IngestServiceContract {
       .limit(1);
 
     if (!job) {
-      throw new Error(`Ingest job ${input.id} not found`);
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `Ingest job ${input.id} not found`,
+      });
     }
 
     return toJob(job);
@@ -263,40 +271,55 @@ export class IngestService implements IngestServiceContract {
 
   async processNextJob(workerId: string): Promise<WorkerResult> {
     const db = requireDatabase(this.database);
-    const [job] = await db.transaction(async (tx) => {
-      const rows = await tx.execute(sql`
-        with next_job as (
-          select id
-          from ${ingestJobsTable}
-          where status = 'queued'
-            and run_after <= now()
-          order by created_at
-          for update skip locked
-          limit 1
-        )
-        update ${ingestJobsTable}
-        set
-          status = 'processing',
-          locked_by = ${workerId},
-          locked_at = now(),
-          attempts = attempts + 1,
-          updated_at = now()
-        where id in (select id from next_job)
-        returning
-          id,
-          url,
-          ingestor,
-          payload,
-          attempts,
-          max_attempts as "maxAttempts"
-      `);
+    // Single CTE+UPDATE statement is implicitly atomic, so no explicit
+    // transaction is needed. `FOR UPDATE SKIP LOCKED` lets multiple workers
+    // claim distinct rows without blocking each other.
+    const rows = (await db.execute(sql`
+      with next_job as (
+        select id
+        from ${ingestJobsTable}
+        where status = 'queued'
+          and run_after <= now()
+        order by created_at
+        for update skip locked
+        limit 1
+      )
+      update ${ingestJobsTable}
+      set
+        status = 'processing',
+        locked_by = ${workerId},
+        locked_at = now(),
+        attempts = attempts + 1,
+        updated_at = now()
+      where id in (select id from next_job)
+      returning
+        id,
+        url,
+        ingestor,
+        payload,
+        attempts,
+        max_attempts as "maxAttempts"
+    `)) as unknown as ClaimedIngestJob[];
 
-      return rowsFromExecute<ClaimedIngestJob>(rows);
-    });
-
+    const job = rows[0];
     if (!job) {
       return { processed: false };
     }
+
+    // Refresh `locked_at` while the job runs so the reaper doesn't requeue
+    // a slow-but-alive capture. If the heartbeat itself fails we just log;
+    // a sustained DB outage will eventually trip the reaper, which is the
+    // desired behavior at that point anyway.
+    const heartbeat = setInterval(async () => {
+      try {
+        await db
+          .update(ingestJobsTable)
+          .set({ lockedAt: new Date(), updatedAt: new Date() })
+          .where(eq(ingestJobsTable.id, job.id));
+      } catch (error) {
+        console.error(error, "ingest job heartbeat failed");
+      }
+    }, HEARTBEAT_MS);
 
     try {
       const result = await this.ingestInternal({
@@ -348,7 +371,56 @@ export class IngestService implements IngestServiceContract {
         processed: true,
         status,
       };
+    } finally {
+      clearInterval(heartbeat);
     }
+  }
+
+  // Recovers jobs whose worker died mid-processing. Without this, a crashed
+  // worker leaves rows stuck in `processing` forever — no other worker will
+  // claim them because the SELECT only looks at `queued`. Jobs that have
+  // already exhausted their retries are flipped to `failed`; the rest go
+  // back to `queued`.
+  async reapStuckJobs(stuckMs: number) {
+    const db = requireDatabase(this.database);
+    const cutoff = new Date(Date.now() - stuckMs);
+
+    const failedRows = await db
+      .update(ingestJobsTable)
+      .set({
+        errorMessage: "Worker timed out",
+        finishedAt: new Date(),
+        lockedAt: null,
+        lockedBy: null,
+        status: "failed",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(ingestJobsTable.status, "processing"),
+          lt(ingestJobsTable.lockedAt, cutoff),
+          sql`${ingestJobsTable.attempts} >= ${ingestJobsTable.maxAttempts}`,
+        ),
+      )
+      .returning({ id: ingestJobsTable.id });
+
+    const requeuedRows = await db
+      .update(ingestJobsTable)
+      .set({
+        lockedAt: null,
+        lockedBy: null,
+        status: "queued",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(ingestJobsTable.status, "processing"),
+          lt(ingestJobsTable.lockedAt, cutoff),
+        ),
+      )
+      .returning({ id: ingestJobsTable.id });
+
+    return { failed: failedRows.length, requeued: requeuedRows.length };
   }
 
   private async ingestInternal(

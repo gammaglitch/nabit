@@ -14,7 +14,8 @@ CREATE TABLE "nabit"."ingest_jobs" (
 	"locked_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"finished_at" timestamp with time zone
+	"finished_at" timestamp with time zone,
+	CONSTRAINT "ingest_jobs_status_check" CHECK ("nabit"."ingest_jobs"."status" in ('queued', 'processing', 'success', 'failed'))
 );
 --> statement-breakpoint
 ALTER TABLE "nabit"."ingest_jobs" ADD CONSTRAINT "ingest_jobs_item_id_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "nabit"."items"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
