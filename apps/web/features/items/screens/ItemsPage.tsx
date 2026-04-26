@@ -10,11 +10,16 @@ import { CompactRow } from "../components/CompactRow";
 import { LibrarySidebar } from "../components/LibrarySidebar";
 import { ListRow } from "../components/ListRow";
 import { PreviewPane } from "../components/PreviewPane";
+import { QueueStatus } from "../components/QueueStatus";
 import { SettingsMenu } from "../components/SettingsMenu";
 import { SplitRow } from "../components/SplitRow";
 import { TagPicker, type TagPickerAnchor } from "../components/TagPicker";
 import { useTagOperations } from "../hooks/useTagOperations";
-import { type DisplayItem, highlight, toDisplayItem } from "../utils/item-helpers";
+import {
+  type DisplayItem,
+  highlight,
+  toDisplayItem,
+} from "../utils/item-helpers";
 
 type Layout = "list" | "split" | "compact";
 type SortMode = "recent" | "oldest" | "title";
@@ -128,14 +133,20 @@ export default function ItemsPage() {
           i.tags.some((t) => t.name.toLowerCase().includes(q)),
       );
     }
-    if (sort === "recent")
-      out = [...out].sort((a, b) => b.savedAt - a.savedAt);
-    if (sort === "oldest")
-      out = [...out].sort((a, b) => a.savedAt - b.savedAt);
+    if (sort === "recent") out = [...out].sort((a, b) => b.savedAt - a.savedAt);
+    if (sort === "oldest") out = [...out].sort((a, b) => a.savedAt - b.savedAt);
     if (sort === "title")
       out = [...out].sort((a, b) => a.title.localeCompare(b.title));
     return out;
-  }, [displayItems, activeFolder, activeSource, activeTag, debouncedQuery, sort, isStarred]);
+  }, [
+    displayItems,
+    activeFolder,
+    activeSource,
+    activeTag,
+    debouncedQuery,
+    sort,
+    isStarred,
+  ]);
 
   const counts = useMemo(
     () => ({
@@ -163,9 +174,7 @@ export default function ItemsPage() {
 
   const selectedPreviewItem: DisplayItem | null = useMemo(() => {
     if (layout !== "split") return null;
-    return (
-      filtered.find((i) => i.id === previewId) ?? filtered[0] ?? null
-    );
+    return filtered.find((i) => i.id === previewId) ?? filtered[0] ?? null;
   }, [layout, filtered, previewId]);
 
   const previewDetailQuery = trpc.ingest.get.useQuery(
@@ -182,11 +191,7 @@ export default function ItemsPage() {
         document.activeElement instanceof HTMLTextAreaElement
       )
         return;
-      if (
-        e.key !== "ArrowDown" &&
-        e.key !== "ArrowUp" &&
-        e.key !== "Enter"
-      )
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Enter")
         return;
       const currentId = selectedPreviewItem?.id ?? null;
       const current = filtered.findIndex((i) => i.id === currentId);
@@ -365,7 +370,8 @@ export default function ItemsPage() {
               {activeSource !== "all" && ` from ${activeSource}`}
               {activeTag && (
                 <>
-                  {" "}tagged{" "}
+                  {" "}
+                  tagged{" "}
                   <span
                     style={{
                       background: "var(--ink)",
@@ -392,7 +398,8 @@ export default function ItemsPage() {
               )}
               {debouncedQuery && (
                 <>
-                  {" "}matching &quot;
+                  {" "}
+                  matching &quot;
                   <span style={{ color: "var(--ink)" }}>{debouncedQuery}</span>
                   &quot;
                 </>
@@ -427,8 +434,7 @@ export default function ItemsPage() {
                   fontFamily: "var(--mono-font)",
                   fontSize: 10,
                   letterSpacing: "0.08em",
-                  background:
-                    layout === opt.id ? "var(--ink)" : "transparent",
+                  background: layout === opt.id ? "var(--ink)" : "transparent",
                   color: layout === opt.id ? "var(--bg)" : "var(--ink-2)",
                   lineHeight: 1,
                   borderRight: "1px solid var(--rule)",
@@ -621,26 +627,10 @@ export default function ItemsPage() {
 
       <CaptureModal open={captureOpen} onOpenChange={setCaptureOpen} />
 
-      {!captureOpen && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 16,
-            right: 16,
-            fontFamily: "var(--mono-font)",
-            fontSize: 10,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: "var(--ink-3)",
-            background: "var(--bg)",
-            border: "1px solid var(--rule)",
-            padding: "6px 10px",
-            pointerEvents: "none",
-          }}
-        >
-          ⌘K to nab · Esc to close
-        </div>
-      )}
+      <QueueStatus
+        hidden={captureOpen}
+        onOpenCapture={() => setCaptureOpen(true)}
+      />
     </div>
   );
 }

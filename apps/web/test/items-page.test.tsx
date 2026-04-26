@@ -2,17 +2,13 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import ItemsRoute from "@/app/items/page";
 
-const {
-  invalidateList,
-  invalidateGet,
-  invalidateTagsList,
-  mutateIngest,
-} = vi.hoisted(() => ({
-  invalidateList: vi.fn(),
-  invalidateGet: vi.fn(),
-  invalidateTagsList: vi.fn(),
-  mutateIngest: vi.fn(),
-}));
+const { invalidateList, invalidateGet, invalidateTagsList, mutateIngest } =
+  vi.hoisted(() => ({
+    invalidateList: vi.fn(),
+    invalidateGet: vi.fn(),
+    invalidateTagsList: vi.fn(),
+    mutateIngest: vi.fn(),
+  }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -30,6 +26,7 @@ vi.mock("@/lib/trpc/react", () => {
         return {
           ingest: {
             get: { invalidate: invalidateGet },
+            jobs: { invalidate: vi.fn() },
             list: { invalidate: invalidateList },
           },
           tags: { list: { invalidate: invalidateTagsList } },
@@ -37,6 +34,16 @@ vi.mock("@/lib/trpc/react", () => {
       },
       ingest: {
         ingest: {
+          useMutation() {
+            return {
+              error: null,
+              isPending: false,
+              mutate: mutateIngest,
+              mutateAsync: vi.fn(),
+            };
+          },
+        },
+        enqueue: {
           useMutation() {
             return {
               error: null,
@@ -80,6 +87,15 @@ vi.mock("@/lib/trpc/react", () => {
                 ],
                 total: 1,
               },
+              error: null,
+              isLoading: false,
+            };
+          },
+        },
+        jobs: {
+          useQuery() {
+            return {
+              data: { jobs: [] },
               error: null,
               isLoading: false,
             };

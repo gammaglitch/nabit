@@ -36,6 +36,21 @@ services:
     ports:
       - "3001:3001"
 
+  ingest-worker:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    image: nabit-api:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nabit}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-nabit}
+    command: ["bun", "src/worker.ts"]
+
   web:
     build:
       context: .

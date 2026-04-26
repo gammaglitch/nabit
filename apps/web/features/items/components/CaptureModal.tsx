@@ -31,13 +31,13 @@ function looksLikeUrl(q: string): boolean {
 export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
   const utils = trpc.useUtils();
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<"idle" | "error" | "done">("idle");
+  const [status, setStatus] = useState<"idle" | "error" | "queued">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const ingestMutation = trpc.ingest.ingest.useMutation({
+  const enqueueMutation = trpc.ingest.enqueue.useMutation({
     onSuccess: async () => {
-      await utils.ingest.list.invalidate();
-      setStatus("done");
+      await utils.ingest.jobs.invalidate();
+      setStatus("queued");
       setTimeout(() => {
         setQuery("");
         setStatus("idle");
@@ -59,8 +59,8 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
   }, [open]);
 
   const type = detectType(query);
-  const nabbing = ingestMutation.isPending;
-  const done = status === "done";
+  const nabbing = enqueueMutation.isPending;
+  const queued = status === "queued";
   const trimmed = query.trim();
   const canNab = looksLikeUrl(trimmed) && !nabbing;
 
@@ -68,7 +68,7 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
     if (!canNab) return;
     setErrorMessage(null);
     setStatus("idle");
-    ingestMutation.mutate({ url: trimmed });
+    enqueueMutation.mutate({ url: trimmed });
   };
 
   return (
@@ -159,7 +159,7 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
             </span>
           </div>
 
-          {nabbing || done || status === "error" ? (
+          {nabbing || queued || status === "error" ? (
             <div
               style={{
                 padding: "18px 20px",
@@ -170,10 +170,10 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
             >
               <div style={{ marginBottom: 10 }}>
                 {status === "error"
-                  ? "× Nab failed."
-                  : done
-                    ? "✓ Nabbed. Shiny."
-                    : "Nabbing…"}
+                  ? "× Queue failed."
+                  : queued
+                    ? "✓ Queued."
+                    : "Adding to queue…"}
               </div>
               <div
                 style={{
@@ -189,10 +189,9 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
                     inset: 0,
                     background:
                       status === "error" ? "var(--ink-4)" : "var(--accent)",
-                    transform: done ? "scaleX(1)" : "scaleX(0.6)",
+                    transform: queued ? "scaleX(1)" : "scaleX(0.6)",
                     transformOrigin: "left",
-                    transition:
-                      "transform 0.9s cubic-bezier(.2,.8,.2,1)",
+                    transition: "transform 0.9s cubic-bezier(.2,.8,.2,1)",
                   }}
                 />
               </div>
@@ -206,17 +205,15 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
               >
                 {status === "error" ? (
                   <div style={{ color: "var(--accent)" }}>{errorMessage}</div>
-                ) : done ? (
+                ) : queued ? (
                   <>
-                    <div>✓ captured snapshot</div>
-                    <div>✓ extractor ran</div>
-                    <div>✓ search index updated</div>
+                    <div>✓ job created</div>
+                    <div>→ worker will capture and extract it</div>
                   </>
                 ) : (
                   <>
-                    <div>→ fetching {trimmed.slice(0, 60)}…</div>
-                    <div>→ running extractor</div>
-                    <div>→ capturing comment tree</div>
+                    <div>→ validating {trimmed.slice(0, 60)}…</div>
+                    <div>→ creating ingest job</div>
                   </>
                 )}
               </div>
@@ -292,9 +289,8 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
                   {trimmed ? (
                     canNab ? (
                       <>
-                        Press{" "}
-                        <strong style={{ color: "var(--ink)" }}>↵</strong> to
-                        nab
+                        Press <strong style={{ color: "var(--ink)" }}>↵</strong>{" "}
+                        to nab
                       </>
                     ) : (
                       "Needs to look like a URL (http:// or https://)"

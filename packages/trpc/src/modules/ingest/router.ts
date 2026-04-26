@@ -3,14 +3,20 @@ import { authedProcedure } from "../../lib/trpc/middlewares";
 import {
   DeleteInput,
   DeleteOutput,
+  EnqueueIngestInput,
+  EnqueueIngestOutput,
+  GetIngestJobInput,
   GetItemInput,
   IngestBatchInput,
   IngestBatchOutput,
   IngestInput,
+  IngestJobOutput,
   IngestOutput,
   ItemDetailOutput,
   ItemListInput,
   ItemListOutput,
+  ListIngestJobsInput,
+  ListIngestJobsOutput,
 } from "./dto";
 
 export const ingestRouter = router({
@@ -25,6 +31,24 @@ export const ingestRouter = router({
     .output(IngestBatchOutput)
     .mutation(async ({ ctx, input }) => {
       return ctx.services.ingest.ingestBatch(input);
+    }),
+  enqueue: authedProcedure
+    .input(EnqueueIngestInput)
+    .output(EnqueueIngestOutput)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.services.ingest.enqueue(input);
+    }),
+  job: authedProcedure
+    .input(GetIngestJobInput)
+    .output(IngestJobOutput)
+    .query(async ({ ctx, input }) => {
+      return ctx.services.ingest.getJob(input);
+    }),
+  jobs: authedProcedure
+    .input(ListIngestJobsInput)
+    .output(ListIngestJobsOutput)
+    .query(async ({ ctx, input }) => {
+      return ctx.services.ingest.listJobs(input ?? {});
     }),
   list: authedProcedure
     .input(ItemListInput)
