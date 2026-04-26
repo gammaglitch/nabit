@@ -104,6 +104,7 @@ export const CommentOutput = z.object({
   path: z.string(),
   author: z.string().nullable(),
   contentText: z.string(),
+  contentMarkdown: z.string().nullable(),
   sourceCreatedAt: z.string().nullable(),
   metadata: MetadataRecord,
 });

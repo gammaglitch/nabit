@@ -1,0 +1,1 @@
+ALTER TABLE "nabit"."comments" ADD COLUMN "content_markdown" text;

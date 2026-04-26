@@ -119,6 +119,7 @@ export const commentsTable = schema.table(
     path: ltree("path").notNull(),
     author: t.text("author"),
     contentText: t.text("content_text").notNull(),
+    contentMarkdown: t.text("content_markdown"),
     sourceCreatedAt: t.timestamp("source_created_at", { withTimezone: true }),
     metadata: t.jsonb("metadata").notNull().default({}),
   }),

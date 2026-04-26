@@ -22,6 +22,13 @@
       "when": 1775925708861,
       "tag": "0002_pretty_tag",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777226748879,
+      "tag": "0003_old_jubilee",
+      "breakpoints": true
     }
   ]
 }

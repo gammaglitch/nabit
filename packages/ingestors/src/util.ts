@@ -29,13 +29,18 @@ export function stripHtmlTags(html: string | null | undefined) {
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n\n")
     .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/g, "&")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) =>
+      String.fromCodePoint(Number.parseInt(hex, 16)),
+    )
+    .replace(/&#(\d+);/g, (_, dec) =>
+      String.fromCodePoint(Number.parseInt(dec, 10)),
+    )
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
     .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
     .replace(/[ \t]+/g, " ")
     .replace(/\n /g, "\n")
     .replace(/\n{3,}/g, "\n\n")

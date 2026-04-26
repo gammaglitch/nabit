@@ -469,6 +469,7 @@ export class IngestService implements IngestServiceContract {
         tags: itemTagRows.map((row) => ({ id: row.tagId, name: row.tagName })),
         comments: comments.map((comment) => ({
           author: comment.author,
+          contentMarkdown: comment.contentMarkdown,
           contentText: comment.contentText,
           externalId: comment.externalId,
           id: comment.id,
@@ -676,6 +677,7 @@ export class IngestService implements IngestServiceContract {
     await db.insert(commentsTable).values(
       input.extraction.comments.map((comment) => ({
         author: comment.author ?? null,
+        contentMarkdown: comment.contentMarkdown ?? null,
         contentText: comment.contentText,
         externalId: comment.externalId ?? null,
         itemId: input.itemId,

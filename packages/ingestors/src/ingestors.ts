@@ -217,12 +217,19 @@ function flattenRedditComments(
     index += 1;
     const data = entry.data ?? {};
     const path = makePath(parentPath, index);
-    const body =
-      firstString(data.body, data.body_html, "[deleted]") ?? "[deleted]";
+    const bodyMarkdown = firstString(data.body);
+    const bodyHtml = firstString(data.body_html);
+    const contentMarkdown = bodyMarkdown ?? htmlToMarkdown(bodyHtml);
+    const contentText =
+      (bodyHtml ? stripHtmlTags(bodyHtml) : null) ??
+      bodyMarkdown ??
+      contentMarkdown ??
+      "[deleted]";
 
     comments.push({
       author: firstString(data.author),
-      contentText: stripHtmlTags(body) ?? body,
+      contentMarkdown,
+      contentText,
       externalId: firstString(data.id, data.name)?.replace(/^t1_/, "") ?? null,
       metadata: {
         permalink: firstString(data.permalink),
@@ -271,10 +278,13 @@ function flattenHackerNewsComments(
       typeof entry.id === "number" || typeof entry.id === "string"
         ? String(entry.id)
         : null;
-    const contentText = stripHtmlTags(entry.text) ?? "[deleted]";
+    const contentMarkdown = htmlToMarkdown(entry.text);
+    const contentText =
+      stripHtmlTags(entry.text) ?? contentMarkdown ?? "[deleted]";
 
     comments.push({
       author: firstString(entry.author),
+      contentMarkdown,
       contentText,
       externalId,
       metadata: {
