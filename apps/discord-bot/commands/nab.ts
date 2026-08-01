@@ -11,8 +11,7 @@ export const data = new SlashCommandBuilder()
     option.setName("url").setDescription("The URL to ingest").setRequired(true),
   );
 
-const INGEST_API_URL =
-  process.env.NABIT_API_URL ?? "https://api.example.com";
+const INGEST_API_URL = process.env.NABIT_API_URL;
 const INGEST_API_TOKEN = process.env.NABIT_API_TOKEN;
 
 type IngestResult =
@@ -20,6 +19,13 @@ type IngestResult =
   | { success: false; message: string };
 
 async function ingestUrl(url: string): Promise<IngestResult> {
+  if (!INGEST_API_URL) {
+    return {
+      success: false,
+      message: "NABIT_API_URL is not configured.",
+    };
+  }
+
   if (!INGEST_API_TOKEN) {
     return {
       success: false,
