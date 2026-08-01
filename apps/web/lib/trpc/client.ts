@@ -8,6 +8,10 @@ export function getBrowserApiUrl() {
   return process.env.NEXT_PUBLIC_API_URL ?? fallbackApiUrl;
 }
 
+export function getApiOrigin() {
+  return new URL(getBrowserApiUrl()).origin;
+}
+
 export function createTrpcClient() {
   return createTRPCClient<AppRouter>({
     links: [

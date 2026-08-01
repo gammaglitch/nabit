@@ -46,6 +46,14 @@ export const itemsTable = schema.table(
       .timestamp("ingested_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Bumped whenever the article body or its comments change (see
+    // applyExtraction in modules/ingest/service.ts). Drives incremental
+    // `since` polling on the /export endpoints — unlike ingestedAt, which is
+    // only set once, this moves when comments arrive after the article.
+    contentUpdatedAt: t
+      .timestamp("content_updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     metadata: t.jsonb("metadata").notNull().default({}),
     searchVector: tsvector("search_vector"),
   }),
@@ -53,6 +61,7 @@ export const itemsTable = schema.table(
     unique("uq_items_source_external").on(table.sourceType, table.externalId),
     index("idx_items_source_type").on(table.sourceType),
     index("idx_items_ingested_at").on(table.ingestedAt),
+    index("idx_items_content_updated_at").on(table.contentUpdatedAt),
     index("idx_items_metadata").using("gin", table.metadata),
     index("idx_items_search_vector").using("gin", table.searchVector),
     index("idx_items_subject_item_id").on(table.subjectItemId),
@@ -178,6 +187,41 @@ export const tagsTable = schema.table("tags", (t) => ({
   id: t.bigserial({ mode: "number" }).primaryKey(),
   name: t.text("name").notNull().unique(),
 }));
+
+export const assetsTable = schema.table(
+  "assets",
+  (t) => ({
+    id: t.bigserial({ mode: "number" }).primaryKey(),
+    sha256: t.text("sha256").notNull().unique(),
+    contentType: t.text("content_type").notNull(),
+    byteSize: t.bigint("byte_size", { mode: "number" }).notNull(),
+    sourceUrl: t.text("source_url").notNull(),
+    storagePath: t.text("storage_path").notNull(),
+    fetchedAt: t
+      .timestamp("fetched_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }),
+  (table) => [index("idx_assets_sha256").on(table.sha256)],
+);
+
+export const itemAssetsTable = schema.table(
+  "item_assets",
+  (t) => ({
+    itemId: t
+      .bigint("item_id", { mode: "number" })
+      .notNull()
+      .references(() => itemsTable.id, { onDelete: "cascade" }),
+    assetId: t
+      .bigint("asset_id", { mode: "number" })
+      .notNull()
+      .references(() => assetsTable.id, { onDelete: "cascade" }),
+  }),
+  (table) => [
+    primaryKey({ columns: [table.itemId, table.assetId] }),
+    index("idx_item_assets_asset_id").on(table.assetId),
+  ],
+);
 
 export const itemTagsTable = schema.table(
   "item_tags",

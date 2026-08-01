@@ -1,6 +1,15 @@
 import type { ComponentPropsWithoutRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { getApiOrigin } from "@/lib/trpc/client";
+
+function resolveAssetSrc(src: string | undefined) {
+  if (!src) return src;
+  if (src.startsWith("/assets/")) {
+    return `${getApiOrigin()}${src}`;
+  }
+  return src;
+}
 
 const markdownComponents = {
   h1: (props: ComponentPropsWithoutRef<"h1">) => (
@@ -189,10 +198,11 @@ const markdownComponents = {
   em: (props: ComponentPropsWithoutRef<"em">) => (
     <em style={{ fontStyle: "italic" }} {...props} />
   ),
-  img: ({ alt, ...props }: ComponentPropsWithoutRef<"img">) => (
+  img: ({ alt, src, ...props }: ComponentPropsWithoutRef<"img">) => (
     // biome-ignore lint/performance/noImgElement: markdown image, not part of next/image flow
     <img
       alt={alt ?? ""}
+      src={resolveAssetSrc(src as string | undefined)}
       style={{
         margin: "20px 0",
         maxWidth: "100%",

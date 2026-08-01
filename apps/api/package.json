@@ -10,6 +10,7 @@
     "dev": "bun --watch src/index.ts",
     "fix": "biome check --write .",
     "lint": "biome lint .",
+    "seed:export": "bun scripts/seed-export-demo.ts",
     "start": "bun src/index.ts",
     "start:worker": "bun src/worker.ts",
     "style:check": "biome check --formatter-enabled=true --linter-enabled=false .",

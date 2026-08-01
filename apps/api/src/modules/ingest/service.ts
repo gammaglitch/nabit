@@ -12,6 +12,7 @@ import {
   tagsTable,
 } from "../../db/schema";
 import type { AppEnv } from "../../lib/config/env";
+import type { AssetService } from "../assets/service";
 import type {
   ExtractionAttempt,
   ExtractionStatus,
@@ -183,6 +184,7 @@ export class IngestService implements IngestServiceContract {
   constructor(
     private readonly database: DatabaseState,
     private readonly env: AppEnv,
+    private readonly assets: AssetService | null = null,
   ) {}
 
   async ingest(input: {
@@ -527,8 +529,12 @@ export class IngestService implements IngestServiceContract {
     }
 
     if (preferredExtraction && preferredExtraction.status !== "failed") {
+      const withAssets = await this.processExtractionAssets(
+        preferredExtraction,
+        { itemId, sourceUrl: normalizedUrl },
+      );
       await this.applyExtraction(db, {
-        extraction: preferredExtraction,
+        extraction: withAssets,
         extraMetadata: linkedFetchError ? { linkedFetchError } : undefined,
         fallbackIdentity: {
           ...identity,
@@ -914,6 +920,29 @@ export class IngestService implements IngestServiceContract {
     };
   }
 
+  private async processExtractionAssets(
+    extraction: ExtractionAttempt,
+    context: { itemId: number; sourceUrl: string },
+  ): Promise<ExtractionAttempt> {
+    if (!this.assets || !extraction.contentMarkdown) {
+      return extraction;
+    }
+
+    try {
+      const { markdown, assetIds } = await this.assets.rewriteMarkdownImages(
+        extraction.contentMarkdown,
+        { baseUrl: context.sourceUrl },
+      );
+      if (assetIds.length > 0) {
+        await this.assets.linkAssetsToItem(context.itemId, assetIds);
+      }
+      return { ...extraction, contentMarkdown: markdown };
+    } catch (error) {
+      console.error(error, "asset processing failed; keeping original URLs");
+      return extraction;
+    }
+  }
+
   private async applyExtraction(
     db: Database,
     input: {
@@ -934,6 +963,10 @@ export class IngestService implements IngestServiceContract {
         author: input.extraction.author ?? null,
         contentMarkdown: input.extraction.contentMarkdown ?? null,
         contentText: input.extraction.contentText ?? null,
+        // This update + the comment replace below are the single write path
+        // for an item's content, so bumping here covers both body and comment
+        // changes for /export incremental sync.
+        contentUpdatedAt: new Date(),
         externalId:
           input.extraction.externalId ?? input.fallbackIdentity.externalId,
         metadata,

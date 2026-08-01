@@ -1,6 +1,7 @@
 export interface AppEnv {
   allowedEmails: string[] | null;
   apiToken: string | null;
+  assetStoragePath: string;
   authRequired: boolean;
   headlessBrowser: {
     captureUrl: string | null;
@@ -32,6 +33,7 @@ export function getAppEnv(): AppEnv {
   return {
     allowedEmails: parseList(process.env.ALLOWED_EMAILS),
     apiToken: process.env.API_TOKEN?.trim() || null,
+    assetStoragePath: process.env.ASSET_STORAGE_PATH?.trim() || "./data/assets",
     // Auth is required unless explicitly disabled. Disabling turns the API
     // into single-user mode — every request gets a synthetic admin user and
     // ALLOWED_EMAILS is ignored. Meant for private self-hosted deployments

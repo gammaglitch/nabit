@@ -32,8 +32,8 @@ from across the web — articles, Hacker News threads, Reddit threads, tweets.
 
 Rough sketch of what's on deck. Not committed, not ordered.
 
-- **Queue-mode ingestion.** Submit a URL and forget it. A background
-  worker drains the queue, so slow extractors don't block the caller.
+- ~~**Queue-mode ingestion.** Submit a URL and forget it. A background
+  worker drains the queue, so slow extractors don't block the caller.~~
 - **Ingest by email.** Forward or BCC a message to a dedicated address
   and any URLs inside get nabbed. Useful for newsletters, share sheets
   on devices without the extension, and mail-based workflows.

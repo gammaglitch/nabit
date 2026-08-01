@@ -33,6 +33,11 @@ services:
       HOST: 0.0.0.0
       PORT: 3001
       DATABASE_URL: postgresql://${POSTGRES_USER:-nabit}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-nabit}
+      # Must match the asset-data mount below — the API streams these files
+      # off disk, so the path and the volume have to agree.
+      ASSET_STORAGE_PATH: /data/assets
+    volumes:
+      - asset-data:/data/assets
     ports:
       - "3001:3001"
 
@@ -49,6 +54,12 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-nabit}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-nabit}
+      # Same volume as the api service. The worker writes downloaded images
+      # and the api serves them, so they must share one store — otherwise
+      # queued ingests produce rows whose bytes the api can never find.
+      ASSET_STORAGE_PATH: /data/assets
+    volumes:
+      - asset-data:/data/assets
     command: ["bun", "src/worker.ts"]
 
   web:
@@ -76,3 +87,6 @@ services:
 
 volumes:
   db-data:
+  # Content-addressed image blobs (<aa>/<bb>/<sha256>). Shared read-write by
+  # api and ingest-worker; survives container recreation on deploy.
+  asset-data:

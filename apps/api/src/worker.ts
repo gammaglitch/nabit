@@ -1,5 +1,6 @@
 import { createDatabaseState } from "./db/client";
 import { getAppEnv } from "./lib/config/env";
+import { AssetService } from "./modules/assets/service";
 import { IngestService } from "./modules/ingest/service";
 
 const workerId = process.env.WORKER_ID ?? `ingest-worker-${process.pid}`;
@@ -26,7 +27,9 @@ async function main() {
     throw new Error("DATABASE_URL is required for the ingest worker");
   }
 
-  const service = new IngestService(database, getAppEnv());
+  const env = getAppEnv();
+  const assets = new AssetService(database, env.assetStoragePath);
+  const service = new IngestService(database, env, assets);
   let lastReapAt = 0;
 
   console.info(

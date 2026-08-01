@@ -1,0 +1,2 @@
+ALTER TABLE "nabit"."items" ADD COLUMN "content_updated_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
+CREATE INDEX "idx_items_content_updated_at" ON "nabit"."items" USING btree ("content_updated_at");
