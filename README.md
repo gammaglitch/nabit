@@ -88,6 +88,38 @@ container, set `DATABASE_URL` in `.env` and use:
 docker compose -f compose.yml -f compose.hosted-db.yml up --build
 ```
 
+### Routing ingest traffic through a VPN
+
+The ingest worker fetches arbitrary third-party pages (reddit, Hacker News,
+and anything the `generic` readability ingestor is handed). To make those
+requests exit through a VPN instead of your server's own IP, add the
+Gluetun overlay:
+
+```bash
+# fill in the VPN_* values in .env
+docker compose -f compose.yml -f compose.vpn.yml up -d
+```
+
+This puts `ingest-worker` inside Gluetun's network namespace, so its
+traffic either goes through the tunnel or is dropped — if the tunnel dies,
+the worker loses connectivity rather than silently falling back to your
+real IP. `api`, `web`, and `db` are untouched, so published ports and any
+reverse proxy in front of the stack keep working.
+
+Three caveats worth knowing:
+
+- **Gluetun is an egress tunnel, not a reverse proxy.** It cannot accept
+  inbound traffic for your domains; this overlay only changes where the
+  worker's *outbound* requests come from.
+- **DNS lookups are not tunneled.** Docker forbids `dns:` and
+  `extra_hosts:` on a container that shares another's network namespace,
+  so the worker keeps Docker's embedded resolver in order to resolve `db`.
+  Sites the worker scrapes still see the VPN's exit IP; your host's
+  resolver still sees which hostnames were looked up.
+- **Some sites block shared VPN exits.** Commercial VPN IPs are shared, so
+  targets like `web.archive.org` may answer `429` where your own IP works
+  fine. Pin `VPN_SERVER_COUNTRIES` to an exit that your sources tolerate.
+
 You can still build the images manually from the repo root:
 
 ```bash

@@ -1,0 +1,83 @@
+# Optional egress-VPN overlay.
+#
+#   docker compose -f compose.yml -f compose.vpn.yml up -d
+#
+# Routes the ingest worker's outbound traffic through a Gluetun-managed
+# WireGuard/OpenVPN tunnel, so the sites it scrapes (reddit.com,
+# hn.algolia.com, and arbitrary pages via the `generic` readability
+# ingestor) see the VPN's exit IP instead of the host's.
+#
+# Only `ingest-worker` is tunneled. `api`, `web`, and `db` keep their
+# normal networking, so published ports and any reverse-proxy wiring in
+# front of the stack are untouched. Gluetun is an egress tunnel, not a
+# reverse proxy — it cannot accept inbound traffic for your domains.
+#
+# Fill in the VPN_* / WIREGUARD_* / OPENVPN_* values in `.env`; see
+# `.env.example` for the full list.
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun:v3
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    # Most hosts let gluetun create the TUN device itself given NET_ADMIN.
+    # Uncomment if yours does not (some LXC/older kernels).
+    # devices:
+    #   - /dev/net/tun:/dev/net/tun
+    environment:
+      VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER:?VPN_SERVICE_PROVIDER is required when using compose.vpn.yml}
+      VPN_TYPE: ${VPN_TYPE:-wireguard}
+
+      # Used when VPN_TYPE=wireguard.
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY:-}
+      WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES:-}
+      WIREGUARD_PRESHARED_KEY: ${WIREGUARD_PRESHARED_KEY:-}
+
+      # Used when VPN_TYPE=openvpn.
+      OPENVPN_USER: ${OPENVPN_USER:-}
+      OPENVPN_PASSWORD: ${OPENVPN_PASSWORD:-}
+
+      # Optional exit-server selection. Leave blank to let the provider pick.
+      SERVER_COUNTRIES: ${VPN_SERVER_COUNTRIES:-}
+      SERVER_CITIES: ${VPN_SERVER_CITIES:-}
+      SERVER_HOSTNAMES: ${VPN_SERVER_HOSTNAMES:-}
+
+      # Gluetun's killswitch drops every packet that is not bound for the
+      # tunnel. The worker still has to reach `db` on the compose network,
+      # so private address space has to be allowed back out. Tighten this
+      # to the exact subnet `docker network inspect` reports for this
+      # project if you want a smaller hole.
+      FIREWALL_OUTBOUND_SUBNETS: ${VPN_OUTBOUND_SUBNETS:-172.16.0.0/12}
+
+      TZ: ${TZ:-UTC}
+    # The image ships its own healthcheck that verifies the tunnel is
+    # actually up, which is what `ingest-worker` waits on below.
+    #
+    # gluetun joins the `default` network. If you stack this on top of an
+    # overlay that moves `db` onto a named network, gluetun has to join it
+    # too — the worker lives in gluetun's namespace, so gluetun's network
+    # membership is the worker's. Add, in that overlay:
+    #   gluetun:
+    #     networks: [internal]
+
+  ingest-worker:
+    # Shares gluetun's network namespace: every packet the worker sends
+    # either goes through the tunnel or is dropped. If gluetun dies, the
+    # worker loses connectivity rather than falling back to the host IP.
+    network_mode: "service:gluetun"
+    # `network_mode` and `networks` are mutually exclusive, so drop any
+    # explicit network membership an earlier overlay assigned.
+    networks: !reset null
+    depends_on:
+      # Only gluetun is declared here — the `db` dependency is inherited
+      # from compose.yml, and stays dropped if compose.hosted-db.yml was
+      # applied first.
+      gluetun:
+        condition: service_healthy
+    # api.Dockerfile's HEALTHCHECK curls localhost:3001/healthz, but the
+    # worker runs no HTTP server — and in gluetun's namespace that port
+    # isn't the API either. Disable it so the container isn't permanently
+    # reported unhealthy.
+    healthcheck:
+      disable: true
