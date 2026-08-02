@@ -1,21 +1,18 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { convertToModelMessages, streamText } from "ai";
+import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import type { AppEnv } from "../../lib/config/env";
 import type { ExportArticleData } from "../export/dto";
 import { renderArticleDocument } from "../export/markdown";
 import type { ExportService } from "../export/service";
+import type { SettingsService } from "../settings/service";
 import {
   ArticleNotFoundError,
   type ChatArticleRequest,
   ChatNotConfiguredError,
 } from "./dto";
 
-// The whole article is re-sent as the system prompt on every turn, so these
-// caps are about cost rather than capacity — they stop a 4000-comment HN
-// thread from turning a one-line question into a very expensive request.
-// Truncation is announced in the prompt so the model can say what it is
-// missing instead of confidently answering from a silently cut document.
-const MAX_CONTEXT_CHARS = 120_000;
+// Comment count is capped independently of the character budget so a huge
+// thread is trimmed by rank rather than truncated mid-sentence.
 const MAX_CONTEXT_COMMENTS = 200;
 
 const SYSTEM_PREAMBLE = `You are a reading assistant inside nabit, a personal web archive. The user is reading the archived document below and will ask questions about it.
@@ -30,6 +27,7 @@ How to answer:
 export class ChatService {
   constructor(
     private readonly exportService: ExportService,
+    private readonly settingsService: SettingsService,
     private readonly env: AppEnv,
   ) {}
 
@@ -43,7 +41,10 @@ export class ChatService {
       throw new ChatNotConfiguredError();
     }
 
-    const article = await this.exportService.getArticle({ id: input.itemId });
+    const [article, settings] = await Promise.all([
+      this.exportService.getArticle({ id: input.itemId }),
+      this.settingsService.getChatSettings(),
+    ]);
     if (!article) {
       throw new ArticleNotFoundError(input.itemId);
     }
@@ -52,14 +53,32 @@ export class ChatService {
 
     return streamText({
       abortSignal: input.abortSignal,
-      model: openrouter(this.env.openrouter.model),
-      messages: await convertToModelMessages(input.messages),
-      system: buildSystemPrompt(article),
+      model: openrouter(settings.model),
+      messages: await convertToModelMessages(
+        takeRecentMessages(input.messages, settings.historyTurns),
+      ),
+      system: buildSystemPrompt(article, settings.maxContextChars),
     });
   }
 }
 
-function buildSystemPrompt(article: ExportArticleData): string {
+/**
+ * Keeps only the most recent messages. The client sends the whole
+ * conversation each turn, and the article is re-sent as the system prompt on
+ * top of it, so an unbounded history makes every question more expensive than
+ * the last. Trimming from the end keeps the part the follow-up refers to.
+ */
+export function takeRecentMessages(
+  messages: UIMessage[],
+  limit: number,
+): UIMessage[] {
+  return messages.length <= limit ? messages : messages.slice(-limit);
+}
+
+function buildSystemPrompt(
+  article: ExportArticleData,
+  maxContextChars: number,
+): string {
   // No assetBaseUrl: image URLs stay root-relative because the model cannot
   // fetch them either way, and absolute URLs would just burn tokens.
   const rendered = renderArticleDocument(article, {
@@ -71,8 +90,8 @@ function buildSystemPrompt(article: ExportArticleData): string {
     0,
     article.comments.length - MAX_CONTEXT_COMMENTS,
   );
-  const truncated = rendered.length > MAX_CONTEXT_CHARS;
-  const document = truncated ? rendered.slice(0, MAX_CONTEXT_CHARS) : rendered;
+  const truncated = rendered.length > maxContextChars;
+  const document = truncated ? rendered.slice(0, maxContextChars) : rendered;
 
   const notes: string[] = [];
   if (truncated) {

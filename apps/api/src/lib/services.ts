@@ -6,6 +6,7 @@ import { ExportService } from "../modules/export/service";
 import { HealthService } from "../modules/health/service";
 import { HelloService } from "../modules/hello/service";
 import { IngestService } from "../modules/ingest/service";
+import { SettingsService } from "../modules/settings/service";
 import { TagService } from "../modules/tags/service";
 import type { AppEnv } from "./config/env";
 import type { AppEventBus } from "./event-bus";
@@ -17,6 +18,7 @@ export interface ServiceContainer extends TrpcServices {
   health: HealthService;
   hello: HelloService;
   ingest: IngestService;
+  settings: SettingsService;
   tags: TagService;
 }
 
@@ -33,10 +35,11 @@ export function makeServices(options: MakeServicesOptions): ServiceContainer {
     options.env.assetStoragePath,
   );
   const exportService = new ExportService(options.database);
+  const settings = new SettingsService(options.database, options.env);
 
   return {
     assets,
-    chat: new ChatService(exportService, options.env),
+    chat: new ChatService(exportService, settings, options.env),
     export: exportService,
     health: new HealthService({
       database: options.database,
@@ -44,6 +47,7 @@ export function makeServices(options: MakeServicesOptions): ServiceContainer {
     }),
     hello,
     ingest: new IngestService(options.database, options.env, assets),
+    settings,
     tags: new TagService(options.database),
   };
 }

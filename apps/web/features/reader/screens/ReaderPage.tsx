@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/features/shared/components/Icon";
+import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
 import { useStarred } from "@/features/shared/hooks/useStarred";
 import {
   hostname,
@@ -234,6 +235,7 @@ export default function ReaderPage({ id }: { id: number }) {
             <Icon name="external" size={12} /> Source
           </a>
         )}
+        <SettingsMenu />
       </div>
 
       <div
