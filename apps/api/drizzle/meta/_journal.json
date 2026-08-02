@@ -57,6 +57,13 @@
       "when": 1785683054748,
       "tag": "0007_stormy_red_shift",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785705271274,
+      "tag": "0008_rich_ozymandias",
+      "breakpoints": true
     }
   ]
 }

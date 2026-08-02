@@ -21,6 +21,10 @@ export const IngestItem = z.object({
   url: z.string().url(),
   payload: z.unknown().optional(),
   ingestor: IngestorName.nullish(),
+  // Enroll this item for LLM summarization and the weekly digest. Optional
+  // rather than defaulted here so the one default lives in the service and
+  // covers the REST paths too, which never pass through this schema.
+  digestOptIn: z.boolean().optional(),
 });
 
 export const IngestInput = IngestItem;
@@ -117,6 +121,7 @@ export const ItemSummaryOutput = z.object({
   sourceCreatedAt: z.string().nullable(),
   ingestedAt: z.string(),
   metadata: MetadataRecord,
+  digestOptIn: z.boolean(),
   snapshotCount: z.number().int().nonnegative(),
   commentCount: z.number().int().nonnegative(),
   latestExtractionStatus: ExtractionStatus.nullable(),
@@ -193,6 +198,16 @@ export const GetItemInput = z.object({
   id: z.number(),
 });
 
+export const SetDigestOptInInput = z.object({
+  id: z.number(),
+  digestOptIn: z.boolean(),
+});
+
+export const SetDigestOptInOutput = z.object({
+  id: z.number(),
+  digestOptIn: z.boolean(),
+});
+
 export type ItemListInputDTO = z.infer<typeof ItemListInput>;
 export type ItemSummaryOutputDTO = z.infer<typeof ItemSummaryOutput>;
 export type ItemListOutputDTO = z.infer<typeof ItemListOutput>;
@@ -203,3 +218,5 @@ export type ItemDetailOutputDTO = z.infer<typeof ItemDetailOutput>;
 export type DeleteInputDTO = z.infer<typeof DeleteInput>;
 export type DeleteOutputDTO = z.infer<typeof DeleteOutput>;
 export type GetItemInputDTO = z.infer<typeof GetItemInput>;
+export type SetDigestOptInInputDTO = z.infer<typeof SetDigestOptInInput>;
+export type SetDigestOptInOutputDTO = z.infer<typeof SetDigestOptInOutput>;

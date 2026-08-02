@@ -47,6 +47,7 @@ type IngestJobRow = typeof ingestJobsTable.$inferSelect;
 
 type ClaimedIngestJob = {
   attempts: number;
+  digestOptIn: boolean;
   id: number;
   ingestor: string | null;
   maxAttempts: number;
@@ -55,6 +56,7 @@ type ClaimedIngestJob = {
 };
 
 type InternalIngestInput = {
+  digestOptIn?: boolean;
   ingestor?: IngestorName | null;
   payload?: unknown;
   skipLinkedUrls?: boolean;
@@ -139,6 +141,7 @@ function toSummary(
     commentCount: counts.commentCount,
     contentMarkdown: row.contentMarkdown,
     contentText: row.contentText,
+    digestOptIn: row.digestOptIn,
     externalId: row.externalId,
     id: row.id,
     ingestedAt: row.ingestedAt.toISOString(),
@@ -188,6 +191,7 @@ export class IngestService implements IngestServiceContract {
   ) {}
 
   async ingest(input: {
+    digestOptIn?: boolean;
     ingestor?: IngestorName | null;
     payload?: unknown;
     url: string;
@@ -196,6 +200,7 @@ export class IngestService implements IngestServiceContract {
   }
 
   async enqueue(input: {
+    digestOptIn?: boolean;
     ingestor?: IngestorName | null;
     payload?: unknown;
     url: string;
@@ -211,6 +216,10 @@ export class IngestService implements IngestServiceContract {
     // rather than queueing duplicate work. Best-effort — there is a small
     // race between SELECT and INSERT, but the downstream `ensureItem` is
     // idempotent so duplicates are merely wasteful, not incorrect.
+    //
+    // Note this also means a second enqueue for the same URL keeps the first
+    // job's `digestOptIn`. Re-nabbing with the box ticked won't enroll an
+    // already-queued item; use setDigestOptIn once it lands.
     const [existing] = await db
       .select()
       .from(ingestJobsTable)
@@ -230,6 +239,7 @@ export class IngestService implements IngestServiceContract {
     const [job] = await db
       .insert(ingestJobsTable)
       .values({
+        digestOptIn: input.digestOptIn ?? false,
         ingestor: ingestorName,
         payload: input.payload,
         status: "queued",
@@ -299,6 +309,7 @@ export class IngestService implements IngestServiceContract {
         url,
         ingestor,
         payload,
+        digest_opt_in as "digestOptIn",
         attempts,
         max_attempts as "maxAttempts"
     `)) as unknown as ClaimedIngestJob[];
@@ -325,6 +336,7 @@ export class IngestService implements IngestServiceContract {
 
     try {
       const result = await this.ingestInternal({
+        digestOptIn: job.digestOptIn,
         ingestor: job.ingestor as IngestorName | null,
         payload: job.payload,
         skipLinkedUrls: false,
@@ -470,6 +482,7 @@ export class IngestService implements IngestServiceContract {
     // we auto-fetch it and attach it as a child pointing back at this item.
     const { created, itemId } = await this.ensureItem(db, {
       ...identity,
+      digestOptIn: input.digestOptIn ?? false,
       sourceUrl: normalizedUrl,
       subjectItemId: null,
     });
@@ -508,6 +521,8 @@ export class IngestService implements IngestServiceContract {
       : null;
     if (linkedUrl) {
       try {
+        // No `digestOptIn` here on purpose: the user opted the thing they
+        // nabbed into the digest, not whatever it happens to link out to.
         sourceItem = await this.ingestInternal({
           skipLinkedUrls: true,
           url: linkedUrl,
@@ -796,6 +811,27 @@ export class IngestService implements IngestServiceContract {
     return { deleted: result.length > 0 };
   }
 
+  async setDigestOptIn(input: { digestOptIn: boolean; id: number }) {
+    const db = requireDatabase(this.database);
+    const [updated] = await db
+      .update(itemsTable)
+      .set({ digestOptIn: input.digestOptIn })
+      .where(eq(itemsTable.id, input.id))
+      .returning({
+        digestOptIn: itemsTable.digestOptIn,
+        id: itemsTable.id,
+      });
+
+    if (!updated) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `Item ${input.id} not found`,
+      });
+    }
+
+    return updated;
+  }
+
   private async summarizeItemRows(db: Database, rows: ItemRow[]) {
     if (rows.length === 0) {
       return [];
@@ -872,7 +908,10 @@ export class IngestService implements IngestServiceContract {
 
   private async ensureItem(
     db: Database,
-    identity: ItemIdentity & { subjectItemId: number | null },
+    identity: ItemIdentity & {
+      digestOptIn: boolean;
+      subjectItemId: number | null;
+    },
   ) {
     const existing = await db
       .select({ id: itemsTable.id })
@@ -886,6 +925,9 @@ export class IngestService implements IngestServiceContract {
       .limit(1);
 
     if (existing.length > 0) {
+      // Deliberately never updates `digestOptIn`. It is user-owned state, and
+      // a re-ingest or replay carrying the capture-time default would silently
+      // undo someone turning the flag off in the reader.
       const updates: Partial<typeof itemsTable.$inferInsert> = {
         sourceUrl: identity.sourceUrl,
       };
@@ -906,6 +948,7 @@ export class IngestService implements IngestServiceContract {
     const [item] = await db
       .insert(itemsTable)
       .values({
+        digestOptIn: identity.digestOptIn,
         externalId: identity.externalId,
         metadata: {},
         sourceType: identity.sourceType,

@@ -55,6 +55,14 @@ export const itemsTable = schema.table(
       .notNull()
       .defaultNow(),
     metadata: t.jsonb("metadata").notNull().default({}),
+    // Opt-in for LLM summarization and the weekly digest. Summarizing costs
+    // money per item, so nothing is enrolled unless someone asked for it:
+    // every ingest path that does not explicitly set this gets `false`.
+    //
+    // A column rather than a `metadata` key on purpose — applyExtraction
+    // (see modules/ingest/service.ts) replaces `metadata` wholesale, so a
+    // user-set key there would be wiped by the next re-ingest.
+    digestOptIn: t.boolean("digest_opt_in").notNull().default(false),
     searchVector: tsvector("search_vector"),
   }),
   (table) => [
@@ -65,6 +73,11 @@ export const itemsTable = schema.table(
     index("idx_items_metadata").using("gin", table.metadata),
     index("idx_items_search_vector").using("gin", table.searchVector),
     index("idx_items_subject_item_id").on(table.subjectItemId),
+    // Partial: the digest only ever scans opted-in items in a date window,
+    // and those are a small minority of the archive.
+    index("idx_items_digest_window")
+      .on(table.ingestedAt)
+      .where(sql`${table.digestOptIn}`),
     foreignKey({
       columns: [table.subjectItemId],
       foreignColumns: [table.id],
@@ -99,6 +112,10 @@ export const ingestJobsTable = schema.table(
     url: t.text("url").notNull(),
     ingestor: t.text("ingestor"),
     payload: t.jsonb("payload"),
+    // Carries the capture-time digest choice through to item creation, where
+    // ensureItem applies it on insert only. Defaults false so the headless
+    // ingest paths (REST, extension, Discord bot, userscript) never enroll.
+    digestOptIn: t.boolean("digest_opt_in").notNull().default(false),
     itemId: t
       .bigint("item_id", { mode: "number" })
       .references(() => itemsTable.id, { onDelete: "set null" }),

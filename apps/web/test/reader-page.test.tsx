@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import ReaderPage from "@/features/reader/screens/ReaderPage";
 
 type MockComment = {
@@ -18,6 +18,7 @@ type MockLinkedItem = {
   commentCount: number;
   contentMarkdown: string | null;
   contentText: string | null;
+  digestOptIn: boolean;
   externalId: string | null;
   id: number;
   ingestedAt: string;
@@ -38,6 +39,7 @@ type MockItem = {
   comments: MockComment[];
   contentMarkdown: string | null;
   contentText: string | null;
+  digestOptIn: boolean;
   linkedItem: MockLinkedItem | null;
   externalId: string | null;
   extractions: never[];
@@ -61,6 +63,7 @@ const linkedArticle: MockLinkedItem = {
   contentMarkdown:
     '## A heading\n\nHere is a paragraph with **bold** text and an [example link](https://example.com).\n\n```rust\nfn main() {\n    println!("hello");\n}\n```',
   contentText: "A heading. Here is a paragraph...",
+  digestOptIn: false,
   externalId: "https://jack.cab/blog/every-firefox-extension",
   id: 2,
   ingestedAt: "2026-04-09T07:30:00.000Z",
@@ -102,6 +105,7 @@ const detailItem: MockItem = {
   ],
   contentMarkdown: null,
   contentText: null,
+  digestOptIn: false,
   linkedItem: linkedArticle,
   externalId: "47730194",
   extractions: [],
@@ -119,8 +123,9 @@ const detailItem: MockItem = {
   title: "Filing the corners off my MacBooks",
 };
 
-const { useQueryMock } = vi.hoisted(() => ({
+const { useQueryMock, mutateDigestOptIn } = vi.hoisted(() => ({
   useQueryMock: vi.fn(),
+  mutateDigestOptIn: vi.fn().mockResolvedValue({ digestOptIn: true, id: 1 }),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -146,6 +151,13 @@ vi.mock("@/lib/trpc/react", () => {
         get: {
           useQuery: (...args: unknown[]) => useQueryMock(...args),
         },
+        setDigestOptIn: {
+          useMutation: () => ({
+            isPending: false,
+            mutate: vi.fn(),
+            mutateAsync: mutateDigestOptIn,
+          }),
+        },
       },
       tags: {
         list: {
@@ -164,6 +176,10 @@ vi.mock("@/lib/trpc/react", () => {
 });
 
 describe("ReaderPage", () => {
+  beforeEach(() => {
+    mutateDigestOptIn.mockClear();
+  });
+
   test("renders an HN thread with its linked article body and comments", () => {
     useQueryMock.mockReturnValue({
       data: { item: detailItem },
@@ -273,5 +289,49 @@ describe("ReaderPage", () => {
     expect(
       screen.getByText(/A question I've been chewing on/),
     ).toBeInTheDocument();
+  });
+
+  test("enrolling an item in the digest sends the opposite of its current state", () => {
+    useQueryMock.mockReturnValue({
+      data: { item: { ...detailItem, digestOptIn: false } },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    const toggle = screen.getByRole("switch", {
+      name: "Include in weekly digest",
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(toggle);
+
+    expect(mutateDigestOptIn).toHaveBeenCalledWith({
+      digestOptIn: true,
+      id: 1,
+    });
+  });
+
+  test("an already-enrolled item offers to remove itself from the digest", () => {
+    useQueryMock.mockReturnValue({
+      data: { item: { ...detailItem, digestOptIn: true } },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    const toggle = screen.getByRole("switch", {
+      name: "Exclude from weekly digest",
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(toggle);
+
+    expect(mutateDigestOptIn).toHaveBeenCalledWith({
+      digestOptIn: false,
+      id: 1,
+    });
   });
 });

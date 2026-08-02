@@ -21,6 +21,8 @@ import type {
   ItemListOutputDTO,
   ListIngestJobsInputDTO,
   ListIngestJobsOutputDTO,
+  SetDigestOptInInputDTO,
+  SetDigestOptInOutputDTO,
 } from "./modules/ingest/dto";
 import type {
   ChatSettingsOutputDTO,
@@ -89,6 +91,9 @@ export interface TrpcServices {
       input: GetItemInputDTO,
     ): ItemDetailOutputDTO | Promise<ItemDetailOutputDTO>;
     delete(input: DeleteInputDTO): DeleteOutputDTO | Promise<DeleteOutputDTO>;
+    setDigestOptIn(
+      input: SetDigestOptInInputDTO,
+    ): SetDigestOptInOutputDTO | Promise<SetDigestOptInOutputDTO>;
   };
   settings: {
     get(): ChatSettingsOutputDTO | Promise<ChatSettingsOutputDTO>;

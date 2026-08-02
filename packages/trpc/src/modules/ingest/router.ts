@@ -17,6 +17,8 @@ import {
   ItemListOutput,
   ListIngestJobsInput,
   ListIngestJobsOutput,
+  SetDigestOptInInput,
+  SetDigestOptInOutput,
 } from "./dto";
 
 export const ingestRouter = router({
@@ -67,5 +69,11 @@ export const ingestRouter = router({
     .output(DeleteOutput)
     .mutation(async ({ ctx, input }) => {
       return ctx.services.ingest.delete(input);
+    }),
+  setDigestOptIn: authedProcedure
+    .input(SetDigestOptInInput)
+    .output(SetDigestOptInOutput)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.services.ingest.setDigestOptIn(input);
     }),
 });

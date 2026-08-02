@@ -3,6 +3,7 @@
 import { Command as CommandPrimitive } from "cmdk";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { DigestToggle } from "@/features/shared/components/DigestToggle";
 import {
   type NormalizedSource,
   sourceColor,
@@ -33,6 +34,9 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"idle" | "error" | "queued">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Opt-out by default: summarizing costs money, so enrolling is a deliberate
+  // act. Resets with the rest of the form on every open.
+  const [digestOptIn, setDigestOptIn] = useState(false);
 
   const enqueueMutation = trpc.ingest.enqueue.useMutation({
     onSuccess: async () => {
@@ -55,6 +59,7 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
       setQuery("");
       setStatus("idle");
       setErrorMessage(null);
+      setDigestOptIn(false);
     }
   }, [open]);
 
@@ -68,7 +73,7 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
     if (!canNab) return;
     setErrorMessage(null);
     setStatus("idle");
-    enqueueMutation.mutate({ url: trimmed });
+    enqueueMutation.mutate({ digestOptIn, url: trimmed });
   };
 
   return (
@@ -299,7 +304,15 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
                     "Paste any article, HN thread, or Reddit link"
                   )}
                 </span>
-                <span>{query.length} chars</span>
+                <span
+                  style={{ display: "flex", alignItems: "center", gap: 14 }}
+                >
+                  <DigestToggle
+                    digestOptIn={digestOptIn}
+                    onToggle={() => setDigestOptIn((current) => !current)}
+                  />
+                  <span>{query.length} chars</span>
+                </span>
               </div>
             </>
           )}
