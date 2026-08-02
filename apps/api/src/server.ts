@@ -221,8 +221,18 @@ export async function buildApp() {
 
     // A client that navigates away or hits stop closes the socket. Without
     // this the model call keeps running and we pay for tokens nobody reads.
+    //
+    // This has to hang off the *response*, not the request: since Node 16 an
+    // IncomingMessage emits "close" once its body has been read, which for a
+    // POST is a few milliseconds in — listening there aborted every call
+    // before it streamed a single token. On the response, "close" precedes
+    // "finish" only when the client really did go away.
     const abortController = new AbortController();
-    req.raw.on("close", () => abortController.abort());
+    reply.raw.on("close", () => {
+      if (!reply.raw.writableFinished) {
+        abortController.abort();
+      }
+    });
 
     let result: Awaited<ReturnType<typeof app.services.chat.streamArticleChat>>;
     try {

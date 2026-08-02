@@ -102,6 +102,66 @@ describe("POST /chat", () => {
     expect(calls).toEqual([{ itemId: 42 }]);
   });
 
+  // Regression: the abort signal used to hang off `req.raw`, whose "close"
+  // event fires once the POST body has been read — so every call was aborted
+  // milliseconds in and streamed nothing, returning a 200 with no error to
+  // show for it.
+  //
+  // This has to run against a real listening server. `app.inject` builds a
+  // mock request that never emits "close" the way a socket does, so the
+  // injected tests above pass either way — which is exactly how the bug got
+  // through in the first place.
+  test("leaves the model call un-aborted while the response streams", async () => {
+    let abortedMidStream: boolean | null = null;
+    type StreamArticleChat = typeof app.services.chat.streamArticleChat;
+
+    app.services.chat.streamArticleChat = (async (input: {
+      abortSignal?: AbortSignal;
+    }) => ({
+      pipeUIMessageStreamToResponse: async (
+        response: Parameters<
+          typeof pipeUIMessageStreamToResponse
+        >[0]["response"],
+        options?: { headers?: Record<string, string> },
+      ) => {
+        // Let the request body finish being consumed, which is when the old
+        // listener fired.
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        abortedMidStream = input.abortSignal?.aborted ?? null;
+
+        return pipeUIMessageStreamToResponse({
+          response,
+          headers: options?.headers,
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "start" },
+              { type: "text-start", id: "0" },
+              { type: "text-delta", id: "0", delta: "still here" },
+              { type: "text-end", id: "0" },
+              { type: "finish" },
+            ],
+            initialDelayInMs: 0,
+            chunkDelayInMs: 0,
+          }),
+        });
+      },
+    })) as unknown as StreamArticleChat;
+
+    const origin = await app.listen({ host: "127.0.0.1", port: 0 });
+    const response = await fetch(`${origin}/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        itemId: 42,
+        messages: [userMessage("hi")],
+      }),
+    });
+    const body = await response.text();
+
+    expect(abortedMidStream).toBe(false);
+    expect(body).toContain("still here");
+  });
+
   test("rejects a request with no itemId", async () => {
     const response = await app.inject({
       method: "POST",
