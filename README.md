@@ -120,10 +120,37 @@ Three caveats worth knowing:
   targets like `web.archive.org` may answer `429` where your own IP works
   fine. Pin `VPN_SERVER_COUNTRIES` to an exit that your sources tolerate.
 
+### Running the Discord bot
+
+`apps/discord-bot` lets you queue captures from Discord with `/nab <url>` or
+`!nab <url>`. It is an opt-in overlay, because without Discord credentials
+the bot exits immediately — folding it into the base stack would crash-loop
+every deployment that doesn't want it:
+
+```bash
+# fill in DISCORD_TOKEN and DISCORD_CLIENT_ID in .env
+docker compose -f compose.yml -f compose.discord.yml up -d
+```
+
+The bot reaches the API at `http://api:3001` over the compose network, so it
+publishes no ports and needs no reverse-proxy wiring. It authenticates with
+the static `API_TOKEN` rather than a Supabase JWT, so **`API_TOKEN` must be
+set** unless you override `NABIT_API_TOKEN` to point at another deployment.
+
+Two things to know before inviting it to a server:
+
+- **There is no authorization inside the bot.** Anyone who can see a channel
+  the bot is in can queue ingests, all under the one shared `API_TOKEN`.
+  Restrict it with Discord's own channel permissions until per-user
+  authorization exists.
+- **`!nab` needs the privileged Message Content intent**, enabled on the Bot
+  tab of your application. The `/nab` slash command works without it.
+
 You can still build the images manually from the repo root:
 
 ```bash
 docker build -f docker/api.Dockerfile -t nabit-api .
+docker build -f docker/discord-bot.Dockerfile -t nabit-discord-bot .
 docker build \
   -f docker/web.Dockerfile \
   --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3001/trpc \
@@ -162,6 +189,15 @@ variables to `next build` if you're building without Docker).
 | `NEXT_PUBLIC_SUPABASE_URL` | yes | Supabase project URL. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Supabase anonymous key. |
 | `NEXT_PUBLIC_AUTH_REQUIRED` | no | Set to `false` to skip the sign-in gate. Must match the API's `AUTH_REQUIRED`. Defaults to `true`. |
+
+### Discord bot (`nabit-discord-bot`)
+
+| Var | Required | Description |
+|---|---|---|
+| `DISCORD_TOKEN` | yes | Bot token from the Discord developer portal. The process exits at startup without it. |
+| `DISCORD_CLIENT_ID` | yes | The application's Application ID, used to register slash commands. |
+| `NABIT_API_URL` | yes | Base URL of the API, no trailing slash. Defaults to `http://api:3001` under `compose.discord.yml`. |
+| `NABIT_API_TOKEN` | yes | Bearer token sent to `/ingest`. Must equal the API's `API_TOKEN`; the overlay defaults it to exactly that. |
 
 ### Database migrations
 
