@@ -13,6 +13,26 @@ const SUGGESTIONS = [
   "What does this assume without arguing for it?",
 ];
 
+// Non-streaming failures (401/404/503) come back as `{"error": "..."}` and
+// useChat surfaces the raw body, so unwrap the envelope rather than showing
+// the reader a blob of JSON.
+function errorMessage(error: Error): string {
+  try {
+    const parsed: unknown = JSON.parse(error.message);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "error" in parsed &&
+      typeof parsed.error === "string"
+    ) {
+      return parsed.error;
+    }
+  } catch {
+    // Not JSON — the message is already human-readable.
+  }
+  return error.message;
+}
+
 function messageText(message: UIMessage): string {
   return message.parts
     .filter((part) => part.type === "text")
@@ -150,7 +170,7 @@ export function ArticleChat({ itemId }: { itemId: number }) {
               overflowWrap: "anywhere",
             }}
           >
-            [ERROR: {error.message}]
+            [ERROR: {errorMessage(error)}]
           </div>
         )}
       </div>
