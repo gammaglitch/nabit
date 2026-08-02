@@ -23,6 +23,11 @@ import type {
   ListIngestJobsOutputDTO,
 } from "./modules/ingest/dto";
 import type {
+  ChatSettingsOutputDTO,
+  UpdateChatSettingsInputDTO,
+  UpdateChatSettingsOutputDTO,
+} from "./modules/settings/dto";
+import type {
   AddTagToItemInputDTO,
   AddTagToItemOutputDTO,
   CreateTagInputDTO,
@@ -84,6 +89,12 @@ export interface TrpcServices {
       input: GetItemInputDTO,
     ): ItemDetailOutputDTO | Promise<ItemDetailOutputDTO>;
     delete(input: DeleteInputDTO): DeleteOutputDTO | Promise<DeleteOutputDTO>;
+  };
+  settings: {
+    get(): ChatSettingsOutputDTO | Promise<ChatSettingsOutputDTO>;
+    update(
+      input: UpdateChatSettingsInputDTO,
+    ): UpdateChatSettingsOutputDTO | Promise<UpdateChatSettingsOutputDTO>;
   };
   tags: {
     list(): TagListOutputDTO | Promise<TagListOutputDTO>;

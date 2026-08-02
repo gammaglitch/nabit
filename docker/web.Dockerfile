@@ -36,6 +36,18 @@ ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
 ENV NEXT_PUBLIC_AUTH_REQUIRED=${NEXT_PUBLIC_AUTH_REQUIRED}
 
 WORKDIR /app/apps/web
+
+# Supabase values are inlined into the client bundle here and cannot be
+# supplied later, so an empty one silently ships a web image that can never
+# sign anyone in. The check lives in the build rather than in compose
+# interpolation because compose evaluates every file it is given, which made
+# unrelated commands (`docker compose up -d api`) fail on hosts that only ever
+# load prebuilt web images.
+RUN test -n "$NEXT_PUBLIC_SUPABASE_URL" \
+  || (echo "NEXT_PUBLIC_SUPABASE_URL is required to build the web image" >&2; exit 1)
+RUN test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+  || (echo "NEXT_PUBLIC_SUPABASE_ANON_KEY is required to build the web image" >&2; exit 1)
+
 RUN bun run build
 
 # --------------------------

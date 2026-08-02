@@ -8,6 +8,11 @@ export interface AppEnv {
     enabled: boolean;
   };
   host: string;
+  openrouter: {
+    apiKey: string | null;
+    enabled: boolean;
+    model: string;
+  };
   port: number;
   supabase: {
     authEnabled: boolean;
@@ -19,10 +24,17 @@ export interface AppEnv {
   websocketsEnabled: boolean;
 }
 
+// Model used for the reader's "ask about this article" chat. Any OpenRouter
+// slug works; this one is picked for a large context window (archived articles
+// plus their comment trees get long) at a moderate price.
+const DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-5";
+
 export function getAppEnv(): AppEnv {
   const headlessBrowserCaptureUrl = parseOptionalAbsoluteUrl(
     process.env.HEADLESS_BROWSER_CAPTURE_URL,
   );
+
+  const openrouterApiKey = process.env.OPENROUTER_API_KEY?.trim() || null;
 
   const supabaseUrl = parseOptionalUrl(process.env.SUPABASE_URL);
   const jwtIssuer =
@@ -44,6 +56,13 @@ export function getAppEnv(): AppEnv {
       enabled: Boolean(headlessBrowserCaptureUrl),
     },
     host: process.env.HOST ?? "0.0.0.0",
+    // Without an API key the chat endpoint stays off and answers 503 — the
+    // rest of the API is unaffected.
+    openrouter: {
+      apiKey: openrouterApiKey,
+      enabled: Boolean(openrouterApiKey),
+      model: process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL,
+    },
     port: Number(process.env.PORT ?? 3001),
     supabase: {
       authEnabled: Boolean(supabaseUrl),

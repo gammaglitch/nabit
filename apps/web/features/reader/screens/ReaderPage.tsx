@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/features/shared/components/Icon";
+import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
 import { useStarred } from "@/features/shared/hooks/useStarred";
 import {
   hostname,
@@ -18,13 +19,17 @@ import {
 import { useTagOperations } from "@/features/items/hooks/useTagOperations";
 import { toDisplayItem } from "@/features/items/utils/item-helpers";
 import { trpc } from "@/lib/trpc/react";
+import { ArticleChat } from "../components/ArticleChat";
 import { CommentTree } from "../components/CommentTree";
 import { MarkdownArticle } from "../components/MarkdownArticle";
+
+type RailTab = "comments" | "chat";
 
 export default function ReaderPage({ id }: { id: number }) {
   const router = useRouter();
   const tagBtnRef = useRef<HTMLButtonElement | null>(null);
   const [tagAnchor, setTagAnchor] = useState<TagPickerAnchor | null>(null);
+  const [railTab, setRailTab] = useState<RailTab>("comments");
   const { isStarred, toggleStarred } = useStarred();
   const { addTag, removeTag } = useTagOperations();
 
@@ -87,6 +92,9 @@ export default function ReaderPage({ id }: { id: number }) {
   const starred = isStarred(item.id);
   const comments = raw.comments;
   const hasOwnComments = comments.length > 0;
+  // The rail is always present now that chat lives there; the Comments tab
+  // only exists for items that actually have any.
+  const activeTab: RailTab = hasOwnComments ? railTab : "chat";
 
   return (
     <div
@@ -194,7 +202,9 @@ export default function ReaderPage({ id }: { id: number }) {
             textTransform: "uppercase",
             background: tagAnchor ? "var(--ink)" : "transparent",
             color: tagAnchor ? "var(--bg)" : "var(--ink-2)",
-            border: tagAnchor ? "1px solid var(--ink)" : "1px solid transparent",
+            border: tagAnchor
+              ? "1px solid var(--ink)"
+              : "1px solid transparent",
             padding: "5px 10px",
             display: "flex",
             alignItems: "center",
@@ -225,21 +235,20 @@ export default function ReaderPage({ id }: { id: number }) {
             <Icon name="external" size={12} /> Source
           </a>
         )}
+        <SettingsMenu />
       </div>
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: hasOwnComments
-            ? "minmax(0,1fr) minmax(0, 440px)"
-            : "minmax(0,1fr)",
+          gridTemplateColumns: "minmax(0,1fr) minmax(0, 440px)",
           height: "100%",
           overflow: "hidden",
         }}
       >
         <div
           style={{
-            borderRight: hasOwnComments ? "1px solid var(--rule)" : "none",
+            borderRight: "1px solid var(--rule)",
             overflow: "auto",
             background: "var(--bg)",
           }}
@@ -440,37 +449,46 @@ export default function ReaderPage({ id }: { id: number }) {
           </div>
         </div>
 
-        {hasOwnComments && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateRows: "auto minmax(0, 1fr)",
+            height: "100%",
+            minHeight: 0,
+            background: "var(--bg-alt)",
+          }}
+        >
           <div
             style={{
-              overflow: "auto",
-              background: "var(--bg-alt)",
+              borderBottom: "1px solid var(--rule)",
+              padding: "0 20px",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
             }}
           >
-            <div
-              style={{
-                position: "sticky",
-                top: 0,
-                background: "var(--bg-alt)",
-                borderBottom: "1px solid var(--rule)",
-                padding: "14px 20px",
-                fontFamily: "var(--mono-font)",
-                fontSize: 10,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: "var(--ink-3)",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                zIndex: 1,
-              }}
-            >
-              <span>Comments · {raw.commentCount || comments.length}</span>
-              <span style={{ color: "var(--ink-4)" }}>archived</span>
-            </div>
-            <CommentTree comments={comments} />
+            {hasOwnComments && (
+              <RailTabButton
+                active={activeTab === "comments"}
+                label={`Comments · ${raw.commentCount || comments.length}`}
+                onClick={() => setRailTab("comments")}
+              />
+            )}
+            <RailTabButton
+              active={activeTab === "chat"}
+              label="Ask"
+              onClick={() => setRailTab("chat")}
+            />
           </div>
-        )}
+
+          {activeTab === "comments" ? (
+            <div style={{ overflow: "auto" }}>
+              <CommentTree comments={comments} />
+            </div>
+          ) : (
+            <ArticleChat itemId={item.id} />
+          )}
+        </div>
       </div>
 
       {tagAnchor && (
@@ -486,6 +504,39 @@ export default function ReaderPage({ id }: { id: number }) {
         />
       )}
     </div>
+  );
+}
+
+function RailTabButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        fontFamily: "var(--mono-font)",
+        fontSize: 10,
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+        color: active ? "var(--ink)" : "var(--ink-3)",
+        background: "transparent",
+        border: "none",
+        borderBottom: active
+          ? "2px solid var(--accent)"
+          : "2px solid transparent",
+        padding: "14px 8px 12px",
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
   );
 }
 

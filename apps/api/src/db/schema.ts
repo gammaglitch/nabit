@@ -252,3 +252,20 @@ export const commentTagsTable = schema.table(
   }),
   (table) => [primaryKey({ columns: [table.commentId, table.tagId] })],
 );
+
+// Instance-wide runtime configuration, editable from the web settings menu.
+// Deliberately key/value rather than one column per setting: these are a
+// handful of operator knobs that change shape as features land, and a typed
+// resolver in the service layer (see modules/settings) gives the safety a
+// wide table would, without a migration per knob.
+//
+// Secrets do not belong here — OPENROUTER_API_KEY stays an env var so a live
+// billing credential never lands in the database or its backups.
+export const settingsTable = schema.table("settings", (t) => ({
+  key: t.text().primaryKey(),
+  value: t.text().notNull(),
+  updatedAt: t
+    .timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+}));

@@ -1,9 +1,14 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import cors from "@fastify/cors";
-import Fastify from "fastify";
+import type { UIMessage } from "ai";
+import Fastify, { type FastifyReply } from "fastify";
 import { getAppEnv } from "./lib/config/env";
 import { makeServices } from "./lib/services";
+import {
+  ArticleNotFoundError,
+  ChatNotConfiguredError,
+} from "./modules/chat/dto";
 import {
   renderArticleDocument,
   rewriteAssetUrls,
@@ -45,7 +50,29 @@ type ExportBatchQuerystring = {
   comments?: string;
 };
 
+type ChatBody = {
+  itemId?: unknown;
+  messages?: unknown;
+};
+
 const EXPORT_BATCH_MAX_IDS = 50;
+
+// Streaming responses bypass `reply.send()`, which is also what flushes the
+// headers @fastify/cors set on the reply. Hand them to the stream writer
+// explicitly, or the browser drops the whole response as a CORS failure.
+function pendingReplyHeaders(reply: FastifyReply): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(reply.getHeaders())) {
+    if (typeof value === "string") {
+      headers[key] = value;
+    } else if (Array.isArray(value)) {
+      headers[key] = value.join(", ");
+    } else if (typeof value === "number") {
+      headers[key] = String(value);
+    }
+  }
+  return headers;
+}
 
 function assetBaseUrl(req: { protocol: string; host: string }): string {
   return `${req.protocol}://${req.host}`;
@@ -174,6 +201,72 @@ export async function buildApp() {
       return reply.status(202).send({ results });
     },
   );
+
+  // Streaming chat about a single archived article, consumed by the reader's
+  // `useChat` panel. Returns an AI SDK UI message stream (SSE).
+  app.post<{ Body: ChatBody }>("/chat", async (req, reply) => {
+    if (!req.user) {
+      return reply.status(401).send({ error: "Authentication required" });
+    }
+
+    const itemId = Number(req.body?.itemId);
+    if (!Number.isInteger(itemId) || itemId <= 0) {
+      return reply.status(400).send({ error: "itemId is required" });
+    }
+
+    const messages = req.body?.messages;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return reply.status(400).send({ error: "messages is required" });
+    }
+
+    // A client that navigates away or hits stop closes the socket. Without
+    // this the model call keeps running and we pay for tokens nobody reads.
+    //
+    // This has to hang off the *response*, not the request: since Node 16 an
+    // IncomingMessage emits "close" once its body has been read, which for a
+    // POST is a few milliseconds in — listening there aborted every call
+    // before it streamed a single token. On the response, "close" precedes
+    // "finish" only when the client really did go away.
+    const abortController = new AbortController();
+    reply.raw.on("close", () => {
+      if (!reply.raw.writableFinished) {
+        abortController.abort();
+      }
+    });
+
+    let result: Awaited<ReturnType<typeof app.services.chat.streamArticleChat>>;
+    try {
+      result = await app.services.chat.streamArticleChat({
+        abortSignal: abortController.signal,
+        itemId,
+        messages: messages as UIMessage[],
+      });
+    } catch (error) {
+      if (error instanceof ChatNotConfiguredError) {
+        return reply.status(503).send({ error: error.message });
+      }
+      if (error instanceof ArticleNotFoundError) {
+        return reply.status(404).send({ error: error.message });
+      }
+      throw error;
+    }
+
+    // Past this point the response is ours to write; Fastify must not also
+    // try to send one.
+    const headers = pendingReplyHeaders(reply);
+    reply.hijack();
+    await result.pipeUIMessageStreamToResponse(reply.raw, {
+      headers,
+      // The stream defaults to a generic "An error occurred." Upstream
+      // failures here are things the operator needs to see (bad key, no
+      // credits, unknown model), and the route is already authenticated.
+      onError: (error) => {
+        req.log.error(error, "chat stream failed");
+        return error instanceof Error ? error.message : "Chat request failed.";
+      },
+    });
+    return reply;
+  });
 
   // Read-only export surface for external apps (e.g. an Obsidian plugin)
   // polling article data as Markdown. See docs and the export module.

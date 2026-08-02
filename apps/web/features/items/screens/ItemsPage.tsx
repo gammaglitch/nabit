@@ -11,7 +11,7 @@ import { LibrarySidebar } from "../components/LibrarySidebar";
 import { ListRow } from "../components/ListRow";
 import { PreviewPane } from "../components/PreviewPane";
 import { QueueStatus } from "../components/QueueStatus";
-import { SettingsMenu } from "../components/SettingsMenu";
+import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
 import { SplitRow } from "../components/SplitRow";
 import { TagPicker, type TagPickerAnchor } from "../components/TagPicker";
 import { useTagOperations } from "../hooks/useTagOperations";
