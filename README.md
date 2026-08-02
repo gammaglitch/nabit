@@ -149,6 +149,8 @@ docker build \
 | `ALLOWED_EMAILS` | when auth required | Comma-separated list of emails permitted to sign in. Ignored when `AUTH_REQUIRED=false`. |
 | `API_TOKEN` | no | Static bearer token for browser-extension / automation calls that don't carry a Supabase JWT. |
 | `AUTH_REQUIRED` | no | Set to `false` to run single-user: the API skips JWT verification and treats every request as an admin. Only safe behind a trusted network boundary (localhost, VPN, Tailscale). Defaults to `true`. Pair with `NEXT_PUBLIC_AUTH_REQUIRED=false` on the web. |
+| `OPENROUTER_API_KEY` | no | Enables the reader's **Ask** panel, which streams answers about the open article from an LLM. Leave unset to keep the feature off — `POST /chat` then returns 503 and the rest of the API is unaffected. |
+| `OPENROUTER_MODEL` | no | OpenRouter model slug used by the Ask panel. Defaults to `anthropic/claude-sonnet-5`. See [openrouter.ai/models](https://openrouter.ai/models). |
 
 ### Web (`nabit-web`)
 
