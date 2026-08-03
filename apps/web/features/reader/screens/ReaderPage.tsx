@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { DigestToggle } from "@/features/shared/components/DigestToggle";
 import { Icon } from "@/features/shared/components/Icon";
 import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
 import { useStarred } from "@/features/shared/hooks/useStarred";
@@ -16,6 +17,7 @@ import {
   TagPicker,
   type TagPickerAnchor,
 } from "@/features/items/components/TagPicker";
+import { useDigestOptIn } from "@/features/items/hooks/useDigestOptIn";
 import { useTagOperations } from "@/features/items/hooks/useTagOperations";
 import { toDisplayItem } from "@/features/items/utils/item-helpers";
 import { trpc } from "@/lib/trpc/react";
@@ -32,6 +34,7 @@ export default function ReaderPage({ id }: { id: number }) {
   const [railTab, setRailTab] = useState<RailTab>("comments");
   const { isStarred, toggleStarred } = useStarred();
   const { addTag, removeTag } = useTagOperations();
+  const { toggleDigestOptIn, isTogglingDigestOptIn } = useDigestOptIn();
 
   const detailQuery = trpc.ingest.get.useQuery(
     { id },
@@ -235,6 +238,14 @@ export default function ReaderPage({ id }: { id: number }) {
             <Icon name="external" size={12} /> Source
           </a>
         )}
+        <DigestToggle
+          digestOptIn={raw.digestOptIn}
+          disabled={isTogglingDigestOptIn}
+          onToggle={() => {
+            void toggleDigestOptIn(raw.id, !raw.digestOptIn);
+          }}
+          style={{ fontSize: 11, letterSpacing: "0.06em", padding: "5px 10px" }}
+        />
         <SettingsMenu />
       </div>
 

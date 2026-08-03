@@ -1,3 +1,11 @@
+import type {
+  GetDigestInputDTO,
+  GetDigestOutputDTO,
+  ListDigestsInputDTO,
+  ListDigestsOutputDTO,
+  TriggerDigestInputDTO,
+  TriggerDigestOutputDTO,
+} from "./modules/digest/dto";
 import type { HealthCheckOutputDTO } from "./modules/health/dto";
 import type {
   HelloWorldInputDTO,
@@ -21,6 +29,8 @@ import type {
   ItemListOutputDTO,
   ListIngestJobsInputDTO,
   ListIngestJobsOutputDTO,
+  SetDigestOptInInputDTO,
+  SetDigestOptInOutputDTO,
 } from "./modules/ingest/dto";
 import type {
   ChatSettingsOutputDTO,
@@ -49,6 +59,17 @@ export interface AuthUser {
 }
 
 export interface TrpcServices {
+  digest: {
+    list(
+      input: ListDigestsInputDTO,
+    ): ListDigestsOutputDTO | Promise<ListDigestsOutputDTO>;
+    get(
+      input: GetDigestInputDTO,
+    ): GetDigestOutputDTO | Promise<GetDigestOutputDTO>;
+    trigger(
+      input: TriggerDigestInputDTO,
+    ): TriggerDigestOutputDTO | Promise<TriggerDigestOutputDTO>;
+  };
   health: {
     check(input: {
       requestId: string;
@@ -89,6 +110,9 @@ export interface TrpcServices {
       input: GetItemInputDTO,
     ): ItemDetailOutputDTO | Promise<ItemDetailOutputDTO>;
     delete(input: DeleteInputDTO): DeleteOutputDTO | Promise<DeleteOutputDTO>;
+    setDigestOptIn(
+      input: SetDigestOptInInputDTO,
+    ): SetDigestOptInOutputDTO | Promise<SetDigestOptInOutputDTO>;
   };
   settings: {
     get(): ChatSettingsOutputDTO | Promise<ChatSettingsOutputDTO>;

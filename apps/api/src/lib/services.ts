@@ -2,6 +2,7 @@ import type { TrpcServices } from "@repo/trpc";
 import type { DatabaseState } from "../db/client";
 import { AssetService } from "../modules/assets/service";
 import { ChatService } from "../modules/chat/service";
+import { DigestService } from "../modules/digest/service";
 import { ExportService } from "../modules/export/service";
 import { HealthService } from "../modules/health/service";
 import { HelloService } from "../modules/hello/service";
@@ -14,6 +15,7 @@ import type { AppEventBus } from "./event-bus";
 export interface ServiceContainer extends TrpcServices {
   assets: AssetService;
   chat: ChatService;
+  digest: DigestService;
   export: ExportService;
   health: HealthService;
   hello: HelloService;
@@ -40,6 +42,12 @@ export function makeServices(options: MakeServicesOptions): ServiceContainer {
   return {
     assets,
     chat: new ChatService(exportService, settings, options.env),
+    digest: new DigestService(
+      options.database,
+      options.env,
+      exportService,
+      settings,
+    ),
     export: exportService,
     health: new HealthService({
       database: options.database,
