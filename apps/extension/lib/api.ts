@@ -1,3 +1,4 @@
+import type { Browser } from "wxt/browser";
 import { getApiToken, getApiUrl } from "./config";
 
 export interface IngestItem {
@@ -59,10 +60,10 @@ export async function ingestBatch(items: IngestItem[]): Promise<BatchResult> {
   return response.json();
 }
 
-export function tabsToItems(tabs: chrome.tabs.Tab[]): IngestItem[] {
+export function tabsToItems(tabs: Browser.tabs.Tab[]): IngestItem[] {
   return tabs
     .filter(
-      (tab): tab is chrome.tabs.Tab & { id: number; url: string } =>
+      (tab): tab is Browser.tabs.Tab & { id: number; url: string } =>
         typeof tab.id === "number" && typeof tab.url === "string",
     )
     .map((tab) => ({
@@ -78,11 +79,11 @@ export function tabsToItems(tabs: chrome.tabs.Tab[]): IngestItem[] {
 }
 
 export function bookmarksToItems(
-  bookmarks: chrome.bookmarks.BookmarkTreeNode[],
+  bookmarks: Browser.bookmarks.BookmarkTreeNode[],
 ): IngestItem[] {
   return bookmarks
     .filter(
-      (bm): bm is chrome.bookmarks.BookmarkTreeNode & { url: string } =>
+      (bm): bm is Browser.bookmarks.BookmarkTreeNode & { url: string } =>
         typeof bm.url === "string",
     )
     .map((bm) => ({

@@ -47,5 +47,5 @@ export async function setApiToken(token: string): Promise<void> {
  * without prompting when the origin is already covered.
  */
 export async function requestHostPermission(url: URL): Promise<boolean> {
-  return chrome.permissions.request({ origins: [`${url.origin}/*`] });
+  return browser.permissions.request({ origins: [`${url.origin}/*`] });
 }
