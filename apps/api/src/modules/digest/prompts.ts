@@ -93,10 +93,11 @@ export function buildDigestPrompt(
     .join("\n\n");
 
   // Stated rather than hidden: a digest that quietly dropped items would read
-  // as a complete week when it is not.
+  // as a complete week when it is not. Covers summary failures, articles with
+  // no extracted body, and anything past the per-run item cap.
   const omissionNote =
     context.omittedCount > 0
-      ? `\n\nNote: ${context.omittedCount} further item(s) from this week could not be summarized and are not included. Mention this in one short clause at the end of the opening paragraph.`
+      ? `\n\nNote: ${context.omittedCount} further item(s) from this week are not included below. Mention this in one short clause at the end of the opening paragraph.`
       : "";
 
   return {

@@ -30,8 +30,18 @@ const MAX_SUMMARY_COMMENTS = 40;
 
 // Matches the ingest worker's heartbeat. A digest run makes one model call per
 // article and can legitimately take many minutes, so its lock has to be
-// refreshed or a reaper would treat a healthy run as dead.
+// refreshed or the reaper would treat a healthy run as dead.
 const HEARTBEAT_MS = 30_000;
+
+// Hard ceiling on a single model call. Without it a hung request has no upper
+// bound: the heartbeat keeps refreshing the lock, so the reaper never fires
+// and the run waits forever.
+const MODEL_TIMEOUT_MS = Number(process.env.DIGEST_MODEL_TIMEOUT_MS ?? 120_000);
+
+// Same shape as the ingest queue's backoff: 5s, 10s, 20s… capped at a minute.
+function retryDelayMs(attempts: number) {
+  return Math.min(60_000, 2 ** Math.max(0, attempts - 1) * 5_000);
+}
 
 type ClaimedDigest = {
   attempts: number;
@@ -57,7 +67,7 @@ function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function toDigest(row: DigestRow) {
+function toDigest(row: DigestRow, timezone: string) {
   return {
     createdAt: row.createdAt.toISOString(),
     errorMessage: row.errorMessage,
@@ -67,6 +77,13 @@ function toDigest(row: DigestRow) {
     model: row.model,
     omittedCount: row.omittedCount,
     periodEnd: row.periodEnd.toISOString(),
+    // Formatted here rather than in the browser: the period is defined in the
+    // instance's configured zone, so a client formatting the raw timestamps
+    // locally would show a different day range than the digest's own heading.
+    periodLabel: formatPeriodLabel(
+      { periodEnd: row.periodEnd, periodStart: row.periodStart },
+      timezone,
+    ),
     periodStart: row.periodStart.toISOString(),
     status: row.status as DigestStatus,
     summaryMarkdown: row.summaryMarkdown,
@@ -127,6 +144,7 @@ export class DigestService {
         select id
         from ${digestsTable}
         where status = 'pending'
+          and run_after <= now()
         order by period_start
         for update skip locked
         limit 1
@@ -196,6 +214,7 @@ export class DigestService {
           finishedAt: willRetry ? null : new Date(),
           lockedAt: null,
           lockedBy: null,
+          runAfter: new Date(Date.now() + retryDelayMs(digest.attempts)),
           status: willRetry ? "pending" : "failed",
           updatedAt: new Date(),
         })
@@ -211,8 +230,123 @@ export class DigestService {
     }
   }
 
+  /**
+   * Recovers digests whose worker died mid-run.
+   *
+   * `processNextDue` only ever claims `pending` rows, so without this a row
+   * left in `processing` by an OOM, a redeploy, or a SIGKILL is stranded
+   * forever and that week is silently lost. The heartbeat is what makes the
+   * distinction safe: a live run keeps refreshing `locked_at`, so anything
+   * older than the cutoff genuinely has no owner.
+   */
+  async reapStuckDigests(stuckMs: number) {
+    const db = requireDatabase(this.database);
+    const cutoff = new Date(Date.now() - stuckMs);
+
+    const failed = await db
+      .update(digestsTable)
+      .set({
+        errorMessage: "worker died mid-run and attempts were exhausted",
+        finishedAt: new Date(),
+        lockedAt: null,
+        lockedBy: null,
+        status: "failed",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(digestsTable.status, "processing"),
+          lt(digestsTable.lockedAt, cutoff),
+          sql`${digestsTable.attempts} >= ${digestsTable.maxAttempts}`,
+        ),
+      )
+      .returning({ id: digestsTable.id });
+
+    const requeued = await db
+      .update(digestsTable)
+      .set({
+        lockedAt: null,
+        lockedBy: null,
+        runAfter: new Date(),
+        status: "pending",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(digestsTable.status, "processing"),
+          lt(digestsTable.lockedAt, cutoff),
+        ),
+      )
+      .returning({ id: digestsTable.id });
+
+    return { failed: failed.length, requeued: requeued.length };
+  }
+
+  /**
+   * Materializes a period and forces it back to `pending` so the worker
+   * rebuilds it on its next pass.
+   *
+   * This is the only way to (re)build a digest on demand: without it the
+   * pipeline can only be exercised by waiting a real week, and a period that
+   * failed or predates the install is unreachable.
+   */
+  async trigger(input: { weeksAgo?: number } = {}) {
+    const db = requireDatabase(this.database);
+    const settings = await this.settingsService.getDigestSettings();
+    const weeksAgo = Math.min(52, Math.max(0, Math.floor(input.weeksAgo ?? 0)));
+
+    // Walk back whole weeks from the most recently closed period by shifting
+    // the reference instant, so each step re-resolves against the calendar and
+    // DST is handled the same way as the live path.
+    const reference = new Date(Date.now() - weeksAgo * 7 * 86_400_000);
+    const bounds = resolvePeriod(reference, {
+      dayOfWeek: settings.dayOfWeek,
+      hour: settings.hour,
+      timezone: settings.timezone,
+    });
+
+    const [row] = await db
+      .insert(digestsTable)
+      .values({
+        periodEnd: bounds.periodEnd,
+        periodStart: bounds.periodStart,
+        status: "pending",
+      })
+      .onConflictDoUpdate({
+        target: digestsTable.periodStart,
+        set: {
+          attempts: 0,
+          errorMessage: null,
+          finishedAt: null,
+          lockedAt: null,
+          lockedBy: null,
+          runAfter: new Date(),
+          status: "pending",
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+
+    return { digest: toDigest(row, settings.timezone) };
+  }
+
   private async buildDigest(db: Database, digest: ClaimedDigest) {
     const settings = await this.settingsService.getDigestSettings();
+    const window = and(
+      eq(itemsTable.digestOptIn, true),
+      gte(itemsTable.ingestedAt, digest.periodStart),
+      lt(itemsTable.ingestedAt, digest.periodEnd),
+    );
+
+    // Counted separately from the page so anything past the cap can be
+    // reported. A digest that silently dropped half the week would read as a
+    // complete one.
+    const [totals] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(itemsTable)
+      .where(window);
+    const totalInWindow = Number(totals?.count ?? 0);
+
     const itemRows = await db
       .select({
         id: itemsTable.id,
@@ -221,15 +355,23 @@ export class DigestService {
         title: itemsTable.title,
       })
       .from(itemsTable)
-      .where(
-        and(
-          eq(itemsTable.digestOptIn, true),
-          gte(itemsTable.ingestedAt, digest.periodStart),
-          lt(itemsTable.ingestedAt, digest.periodEnd),
-        ),
-      )
+      .where(window)
       .orderBy(asc(itemsTable.ingestedAt))
       .limit(settings.maxItems);
+
+    // Everything the cap left behind is omitted, not absent.
+    let omittedCount = Math.max(0, totalInWindow - itemRows.length);
+    if (omittedCount > 0) {
+      console.warn(
+        {
+          digestId: digest.id,
+          droppedByCap: omittedCount,
+          maxItems: settings.maxItems,
+          totalInWindow,
+        },
+        "digest window exceeded maxItems",
+      );
+    }
 
     if (itemRows.length === 0) {
       return {
@@ -262,11 +404,18 @@ export class DigestService {
       summary: string;
       title: string | null;
     }> = [];
-    let omittedCount = 0;
 
     for (const row of itemRows) {
       const article = articleById.get(row.id);
       if (!article) {
+        omittedCount += 1;
+        continue;
+      }
+
+      // An item whose extraction produced nothing renders as frontmatter and a
+      // title. Sending that costs a model call and returns a summary of
+      // nothing, so skip it and count it.
+      if (!article.contentMarkdown?.trim() && !article.contentText?.trim()) {
         omittedCount += 1;
         continue;
       }
@@ -308,6 +457,7 @@ export class DigestService {
       periodLabel,
     });
     const result = await generateText({
+      abortSignal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
       model: openrouter(settings.digestModel),
       prompt: prompt.prompt,
       system: prompt.system,
@@ -367,6 +517,7 @@ export class DigestService {
 
     try {
       const result = await generateText({
+        abortSignal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
         model: input.model,
         prompt: built.prompt,
         system: built.system,
@@ -433,23 +584,29 @@ export class DigestService {
   async list(input: { limit?: number } = {}) {
     const db = requireDatabase(this.database);
     const limit = Math.min(100, Math.max(1, Math.floor(input.limit ?? 20)));
-    const rows = await db
-      .select()
-      .from(digestsTable)
-      .orderBy(desc(digestsTable.periodStart))
-      .limit(limit);
+    const [rows, settings] = await Promise.all([
+      db
+        .select()
+        .from(digestsTable)
+        .orderBy(desc(digestsTable.periodStart))
+        .limit(limit),
+      this.settingsService.getDigestSettings(),
+    ]);
 
-    return { digests: rows.map(toDigest) };
+    return { digests: rows.map((row) => toDigest(row, settings.timezone)) };
   }
 
   async get(input: { id: number }) {
     const db = requireDatabase(this.database);
-    const [row] = await db
-      .select()
-      .from(digestsTable)
-      .where(eq(digestsTable.id, input.id))
-      .limit(1);
+    const [[row], settings] = await Promise.all([
+      db
+        .select()
+        .from(digestsTable)
+        .where(eq(digestsTable.id, input.id))
+        .limit(1),
+      this.settingsService.getDigestSettings(),
+    ]);
 
-    return { digest: row ? toDigest(row) : null };
+    return { digest: row ? toDigest(row, settings.timezone) : null };
   }
 }

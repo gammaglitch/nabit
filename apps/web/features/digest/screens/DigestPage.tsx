@@ -35,23 +35,6 @@ function statusColor(status: DigestStatus) {
   }
 }
 
-function formatRange(periodStart: string, periodEnd: string) {
-  const format = (iso: string) =>
-    new Date(iso).toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-
-  // The window is half-open, so the last included day is the day before the
-  // closing boundary.
-  const lastIncluded = new Date(
-    new Date(periodEnd).getTime() - 86_400_000,
-  ).toISOString();
-
-  return `${format(periodStart)} – ${format(lastIncluded)}`;
-}
-
 const monoLabel = {
   fontFamily: "var(--mono-font)",
   fontSize: 10,
@@ -61,19 +44,42 @@ const monoLabel = {
 
 export default function DigestPage() {
   const router = useRouter();
+  const utils = trpc.useUtils();
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  const listQuery = trpc.digest.list.useQuery({ limit: 50 });
+  // Poll while anything is mid-build: the worker does the work out of band, so
+  // without this the page sits on a stale "QUEUED" until a manual refresh.
+  const listQuery = trpc.digest.list.useQuery(
+    { limit: 50 },
+    {
+      refetchInterval: (query) =>
+        query.state.data?.digests.some(
+          (digest) =>
+            digest.status === "pending" || digest.status === "processing",
+        )
+          ? 5_000
+          : false,
+    },
+  );
   const digests = listQuery.data?.digests ?? [];
 
-  // Default to the newest digest rather than an empty pane.
-  useEffect(() => {
-    if (selectedId === null && digests.length > 0) {
-      setSelectedId(digests[0].id);
-    }
-  }, [digests, selectedId]);
+  const triggerDigest = trpc.digest.trigger.useMutation({
+    onSuccess: async (result) => {
+      setSelectedId(result.digest.id);
+      await utils.digest.list.invalidate();
+    },
+  });
 
-  const selected = digests.find((digest) => digest.id === selectedId) ?? null;
+  // Fall back to the newest whenever the selection is gone — on first load, and
+  // after a refetch drops the row that was selected.
+  const selected =
+    digests.find((digest) => digest.id === selectedId) ?? digests[0] ?? null;
+
+  useEffect(() => {
+    if (selected && selected.id !== selectedId) {
+      setSelectedId(selected.id);
+    }
+  }, [selected, selectedId]);
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
@@ -116,6 +122,24 @@ export default function DigestPage() {
           Weekly digest
         </span>
         <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          disabled={triggerDigest.isPending}
+          onClick={() => triggerDigest.mutate({})}
+          style={{
+            ...monoLabel,
+            background: "transparent",
+            border: "1px solid var(--rule)",
+            color: "var(--ink-2)",
+            cursor: triggerDigest.isPending ? "default" : "pointer",
+            fontSize: 11,
+            letterSpacing: "0.06em",
+            opacity: triggerDigest.isPending ? 0.4 : 1,
+            padding: "5px 10px",
+          }}
+        >
+          {triggerDigest.isPending ? "Queueing…" : "Build latest"}
+        </button>
         <SettingsMenu />
       </div>
 
@@ -185,7 +209,7 @@ export default function DigestPage() {
                       marginBottom: 4,
                     }}
                   >
-                    {formatRange(digest.periodStart, digest.periodEnd)}
+                    {digest.periodLabel}
                   </div>
                   <div
                     style={{
@@ -219,8 +243,8 @@ export default function DigestPage() {
                   }}
                 >
                   {selected.omittedCount} item
-                  {selected.omittedCount === 1 ? "" : "s"} could not be
-                  summarized
+                  {selected.omittedCount === 1 ? "" : "s"} from this week
+                  {selected.omittedCount === 1 ? " is" : " are"} not included
                 </div>
               )}
             </>

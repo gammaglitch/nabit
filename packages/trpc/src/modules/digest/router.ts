@@ -5,6 +5,8 @@ import {
   GetDigestOutput,
   ListDigestsInput,
   ListDigestsOutput,
+  TriggerDigestInput,
+  TriggerDigestOutput,
 } from "./dto";
 
 export const digestRouter = router({
@@ -19,5 +21,14 @@ export const digestRouter = router({
     .output(GetDigestOutput)
     .query(async ({ ctx, input }) => {
       return ctx.services.digest.get(input);
+    }),
+  // Queues a (re)build. Returns as soon as the row is marked pending — the
+  // worker does the work, which can take minutes and must not be held open on
+  // an HTTP request.
+  trigger: authedProcedure
+    .input(TriggerDigestInput)
+    .output(TriggerDigestOutput)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.services.digest.trigger(input ?? {});
     }),
 });

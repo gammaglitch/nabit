@@ -13,6 +13,12 @@ const stuckJobMs = Number(process.env.INGEST_WORKER_STUCK_MS ?? 10 * 60_000);
 // The digest only closes once a week, so this is just how promptly a completed
 // period is noticed. Five minutes keeps the extra query rate negligible.
 const digestIntervalMs = Number(process.env.DIGEST_CHECK_MS ?? 5 * 60_000);
+// How often the digest loop looks for claimable work. Faster than the
+// materialize cadence so a manual rebuild is picked up promptly.
+const digestPollMs = Number(process.env.DIGEST_POLL_MS ?? 15_000);
+// Generous next to the ingest threshold: a legitimate digest run is minutes of
+// model calls, and the heartbeat is what actually proves it is alive.
+const stuckDigestMs = Number(process.env.DIGEST_STUCK_MS ?? 30 * 60_000);
 let shuttingDown = false;
 
 process.on("SIGINT", () => {
@@ -43,51 +49,95 @@ async function main() {
     new ExportService(database),
     settings,
   );
-  let lastReapAt = 0;
-  let lastDigestCheckAt = 0;
-
   console.info(
-    { digestIntervalMs, pollIntervalMs, reapIntervalMs, stuckJobMs, workerId },
+    {
+      digestIntervalMs,
+      digestPollMs,
+      pollIntervalMs,
+      reapIntervalMs,
+      stuckJobMs,
+      workerId,
+    },
     "ingest worker started",
   );
 
-  while (!shuttingDown) {
-    if (Date.now() - lastReapAt > reapIntervalMs) {
-      try {
-        const reaped = await service.reapStuckJobs(stuckJobMs);
-        if (reaped.failed > 0 || reaped.requeued > 0) {
-          console.info({ ...reaped, workerId }, "reaped stuck ingest jobs");
+  async function ingestLoop() {
+    let lastReapAt = 0;
+
+    while (!shuttingDown) {
+      if (Date.now() - lastReapAt > reapIntervalMs) {
+        try {
+          const reaped = await service.reapStuckJobs(stuckJobMs);
+          if (reaped.failed > 0 || reaped.requeued > 0) {
+            console.info({ ...reaped, workerId }, "reaped stuck ingest jobs");
+          }
+        } catch (error) {
+          console.error(error, "reaper failed");
         }
-      } catch (error) {
-        console.error(error, "reaper failed");
+        lastReapAt = Date.now();
       }
-      lastReapAt = Date.now();
-    }
 
-    // The only clock-driven work in the codebase. Materializing is a cheap
-    // `insert ... on conflict do nothing`, so running it on a timer rather
-    // than tracking "have I done this week yet" keeps the state in Postgres
-    // instead of in this process.
-    if (Date.now() - lastDigestCheckAt > digestIntervalMs) {
-      try {
-        const due = await digests.materializeDuePeriods();
-        if (due.created) {
-          console.info(
-            { periodStart: due.periodStart.toISOString(), workerId },
-            "materialized digest period",
-          );
+      const result = await service.processNextJob(workerId);
+
+      if (!result.processed) {
+        await sleep(pollIntervalMs);
+        continue;
+      }
+
+      console.info(
+        {
+          jobId: result.jobId,
+          status: result.status,
+          workerId,
+        },
+        "processed ingest job",
+      );
+    }
+  }
+
+  /**
+   * Runs concurrently with the ingest loop rather than inside it.
+   *
+   * A digest makes one model call per article and can legitimately run for
+   * minutes. Sharing the ingest loop meant every capture queued behind it, so
+   * nabbing a URL mid-digest appeared to hang. The two loops contend only in
+   * Postgres, where `FOR UPDATE SKIP LOCKED` already keeps them apart.
+   */
+  async function digestLoop() {
+    let lastMaterializeAt = 0;
+    let lastReapAt = 0;
+
+    while (!shuttingDown) {
+      // Materializing is a cheap `insert ... on conflict do nothing`, so
+      // running it on a timer rather than tracking "have I done this week yet"
+      // keeps the state in Postgres instead of in this process.
+      if (Date.now() - lastMaterializeAt > digestIntervalMs) {
+        try {
+          const due = await digests.materializeDuePeriods();
+          if (due.created) {
+            console.info(
+              { periodStart: due.periodStart.toISOString(), workerId },
+              "materialized digest period",
+            );
+          }
+        } catch (error) {
+          console.error(error, "digest materialization failed");
         }
-      } catch (error) {
-        console.error(error, "digest materialization failed");
+        lastMaterializeAt = Date.now();
       }
-      lastDigestCheckAt = Date.now();
-    }
 
-    const result = await service.processNextJob(workerId);
+      if (Date.now() - lastReapAt > reapIntervalMs) {
+        try {
+          const reaped = await digests.reapStuckDigests(stuckDigestMs);
+          if (reaped.failed > 0 || reaped.requeued > 0) {
+            console.info({ ...reaped, workerId }, "reaped stuck digests");
+          }
+        } catch (error) {
+          console.error(error, "digest reaper failed");
+        }
+        lastReapAt = Date.now();
+      }
 
-    if (!result.processed) {
-      // Ingest is idle, so this is the cheapest moment to spend minutes
-      // building a digest without delaying a capture the user is waiting on.
       try {
         const digestResult = await digests.processNextDue(workerId);
         if (digestResult.processed) {
@@ -105,19 +155,11 @@ async function main() {
         console.error(error, "digest run failed");
       }
 
-      await sleep(pollIntervalMs);
-      continue;
+      await sleep(digestPollMs);
     }
-
-    console.info(
-      {
-        jobId: result.jobId,
-        status: result.status,
-        workerId,
-      },
-      "processed ingest job",
-    );
   }
+
+  await Promise.all([ingestLoop(), digestLoop()]);
 
   console.info({ workerId }, "ingest worker stopped");
 }

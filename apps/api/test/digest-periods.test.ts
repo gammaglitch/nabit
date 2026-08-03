@@ -74,6 +74,22 @@ describe("resolvePeriod", () => {
     );
   });
 
+  test("shifting the reference instant walks back whole periods", () => {
+    // This is how DigestService.trigger reaches an older week for a rebuild:
+    // it moves the reference back N*7 days and re-resolves, so each step is
+    // recomputed against the calendar instead of assuming 168-hour weeks.
+    const now = new Date("2026-04-08T12:00:00.000Z");
+    const current = resolvePeriod(now, MONDAY_0800_UTC);
+    const twoBack = resolvePeriod(
+      new Date(now.getTime() - 2 * 7 * 86_400_000),
+      MONDAY_0800_UTC,
+    );
+
+    expect(current.periodEnd.toISOString()).toBe("2026-04-06T08:00:00.000Z");
+    expect(twoBack.periodEnd.toISOString()).toBe("2026-03-23T08:00:00.000Z");
+    expect(twoBack.periodStart.toISOString()).toBe("2026-03-16T08:00:00.000Z");
+  });
+
   test("a Sunday boundary is reachable (dayOfWeek 0)", () => {
     const { periodEnd } = resolvePeriod(new Date("2026-04-08T12:00:00.000Z"), {
       dayOfWeek: 0,

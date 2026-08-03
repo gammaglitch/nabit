@@ -329,14 +329,23 @@ export const digestsTable = schema.table(
     periodEnd: t.timestamp("period_end", { withTimezone: true }).notNull(),
     status: t.text("status").notNull().default("pending"),
     itemCount: t.integer("item_count").notNull().default(0),
-    // Items in the window whose summary failed permanently. Recorded so a
-    // digest never silently reads as complete when it is not.
+    // Items in the window that are not represented in the digest — summaries
+    // that failed, articles with no extracted body, and anything past the
+    // maxItems cap. Recorded so a digest never silently reads as complete.
     omittedCount: t.integer("omitted_count").notNull().default(0),
     summaryMarkdown: t.text("summary_markdown"),
     model: t.text("model"),
     errorMessage: t.text("error_message"),
     attempts: t.integer("attempts").notNull().default(0),
     maxAttempts: t.integer("max_attempts").notNull().default(3),
+    // Backoff between attempts, same idea as ingest_jobs.run_after. Without it
+    // a failing digest is re-claimed on the very next tick and burns all three
+    // attempts in seconds — which is exactly the wrong response to a rate
+    // limit or a transient 5xx from the model provider.
+    runAfter: t
+      .timestamp("run_after", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     lockedBy: t.text("locked_by"),
     lockedAt: t.timestamp("locked_at", { withTimezone: true }),
     createdAt: t
@@ -351,7 +360,7 @@ export const digestsTable = schema.table(
   }),
   (table) => [
     unique("uq_digests_period_start").on(table.periodStart),
-    index("idx_digests_status").on(table.status),
+    index("idx_digests_status_run_after").on(table.status, table.runAfter),
     index("idx_digests_period_start").on(table.periodStart),
     check(
       "digests_status_check",

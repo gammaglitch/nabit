@@ -3,6 +3,8 @@ import type {
   GetDigestOutputDTO,
   ListDigestsInputDTO,
   ListDigestsOutputDTO,
+  TriggerDigestInputDTO,
+  TriggerDigestOutputDTO,
 } from "./modules/digest/dto";
 import type { HealthCheckOutputDTO } from "./modules/health/dto";
 import type {
@@ -64,6 +66,9 @@ export interface TrpcServices {
     get(
       input: GetDigestInputDTO,
     ): GetDigestOutputDTO | Promise<GetDigestOutputDTO>;
+    trigger(
+      input: TriggerDigestInputDTO,
+    ): TriggerDigestOutputDTO | Promise<TriggerDigestOutputDTO>;
   };
   health: {
     check(input: {
