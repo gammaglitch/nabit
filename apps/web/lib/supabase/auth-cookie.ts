@@ -29,6 +29,23 @@ export function getAccessTokenExpiry(accessToken: string) {
   }
 }
 
+/**
+ * Whether the cookie holds a token worth treating as a live session.
+ *
+ * Fails closed. A token whose expiry cannot be read — truncated, not a JWT,
+ * corrupt base64, no numeric `exp` — is treated as no session at all.
+ *
+ * This used to return true in that case, which broke two ways. `proxy.ts` let
+ * the request through while the client (whose real session lives in Supabase's
+ * storage, not this cookie) found nothing and redirected to /login, where the
+ * proxy saw the same cookie and bounced it back — an unbreakable redirect loop
+ * that only clearing site data escaped. It also meant any junk value satisfied
+ * the edge gate; the API verifies the JWT properly, so nothing was readable,
+ * but the UI gate was bypassable.
+ *
+ * Every token Supabase issues carries a numeric `exp`, so nothing legitimate
+ * relies on the permissive branch.
+ */
 export function hasUsableAccessToken(
   accessToken: string | null | undefined,
   nowMs = Date.now(),
@@ -39,7 +56,7 @@ export function hasUsableAccessToken(
 
   const expiry = getAccessTokenExpiry(accessToken);
   if (expiry === null) {
-    return true;
+    return false;
   }
 
   return expiry * 1000 > nowMs;
