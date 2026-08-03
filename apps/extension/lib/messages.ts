@@ -25,5 +25,5 @@ export async function sendIngestMessage(
   items: IngestItem[],
 ): Promise<IngestReply> {
   const message: IngestMessage = { items, type: INGEST_MESSAGE };
-  return chrome.runtime.sendMessage<IngestMessage, IngestReply>(message);
+  return (await browser.runtime.sendMessage(message)) as IngestReply;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { Browser } from "wxt/browser";
 import { bookmarksToItems, tabsToItems } from "@/lib/api";
 import {
   getApiToken,
@@ -10,10 +11,18 @@ import {
 } from "@/lib/config";
 import { sendIngestMessage } from "@/lib/messages";
 
-type Tab = chrome.tabs.Tab;
-type Bookmark = chrome.bookmarks.BookmarkTreeNode;
+type Tab = Browser.tabs.Tab;
+type Bookmark = Browser.bookmarks.BookmarkTreeNode;
 type View = "tabs" | "bookmarks";
 type Status = { message: string; error: boolean } | null;
+
+/**
+ * The API only ingests http(s), so this also drops the internal pages each
+ * browser names differently — chrome://, about:, moz-extension://.
+ */
+function isIngestableUrl(url: string | undefined): boolean {
+  return url !== undefined && /^https?:\/\//.test(url);
+}
 
 export default function App() {
   const [view, setView] = useState<View>("tabs");
@@ -26,12 +35,12 @@ export default function App() {
 
   useEffect(() => {
     if (view === "tabs") {
-      chrome.tabs.query({}, (result) => {
-        setTabs(result.filter((t) => t.url && !t.url.startsWith("chrome://")));
+      browser.tabs.query({}).then((result) => {
+        setTabs(result.filter((t) => isIngestableUrl(t.url)));
       });
     } else {
-      chrome.bookmarks.getRecent(50, (result) => {
-        setBookmarks(result.filter((b) => b.url));
+      browser.bookmarks.getRecent(50).then((result) => {
+        setBookmarks(result.filter((b) => isIngestableUrl(b.url)));
       });
     }
     setSelected(new Set());
