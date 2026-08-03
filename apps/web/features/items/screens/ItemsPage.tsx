@@ -342,6 +342,26 @@ export default function ItemsPage() {
           >
             <Icon name="plus" size={12} stroke={2.5} /> Nab
           </button>
+          <button
+            type="button"
+            onClick={() => router.push("/digest")}
+            style={{
+              alignItems: "center",
+              background: "transparent",
+              border: "1px solid transparent",
+              color: "var(--ink-2)",
+              cursor: "pointer",
+              display: "flex",
+              fontFamily: "var(--mono-font)",
+              fontSize: 11,
+              gap: 6,
+              letterSpacing: "0.06em",
+              padding: "5px 10px",
+              textTransform: "uppercase",
+            }}
+          >
+            <Icon name="clock" size={12} /> Digest
+          </button>
           <SettingsMenu />
         </div>
 

@@ -1,3 +1,9 @@
+import type {
+  GetDigestInputDTO,
+  GetDigestOutputDTO,
+  ListDigestsInputDTO,
+  ListDigestsOutputDTO,
+} from "./modules/digest/dto";
 import type { HealthCheckOutputDTO } from "./modules/health/dto";
 import type {
   HelloWorldInputDTO,
@@ -51,6 +57,14 @@ export interface AuthUser {
 }
 
 export interface TrpcServices {
+  digest: {
+    list(
+      input: ListDigestsInputDTO,
+    ): ListDigestsOutputDTO | Promise<ListDigestsOutputDTO>;
+    get(
+      input: GetDigestInputDTO,
+    ): GetDigestOutputDTO | Promise<GetDigestOutputDTO>;
+  };
   health: {
     check(input: {
       requestId: string;
