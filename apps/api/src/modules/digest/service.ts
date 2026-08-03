@@ -51,6 +51,40 @@ type ClaimedDigest = {
   periodStart: Date;
 };
 
+/**
+ * What the claim CTE actually hands back.
+ *
+ * `db.execute` runs raw SQL, so Drizzle's column mappers never see the result:
+ * timestamptz arrives as a string and integers may arrive as strings too,
+ * depending on driver. The typed query builder would have converted them.
+ */
+type ClaimedDigestRow = {
+  attempts: number | string;
+  id: number | string;
+  maxAttempts: number | string;
+  periodEnd: string | Date;
+  periodStart: string | Date;
+};
+
+/**
+ * Converts a raw claim row into real Dates and numbers.
+ *
+ * Exported for tests. Skipping this cost a production digest run: the raw row
+ * was cast straight to ClaimedDigest, so `periodStart` was a string wearing a
+ * Date's type, and the first `gte(items.ingested_at, ...)` built from it threw
+ * `value.toISOString is not a function` — three attempts, then a failed week.
+ * A cast is an assertion, not a conversion.
+ */
+export function normalizeClaimedDigest(row: ClaimedDigestRow): ClaimedDigest {
+  return {
+    attempts: Number(row.attempts),
+    id: Number(row.id),
+    maxAttempts: Number(row.maxAttempts),
+    periodEnd: new Date(row.periodEnd),
+    periodStart: new Date(row.periodStart),
+  };
+}
+
 export type DigestRunResult =
   | { digestId: number; processed: true; status: DigestStatus }
   | { processed: false };
@@ -163,12 +197,13 @@ export class DigestService {
         period_end as "periodEnd",
         attempts,
         max_attempts as "maxAttempts"
-    `)) as unknown as ClaimedDigest[];
+    `)) as unknown as ClaimedDigestRow[];
 
-    const digest = rows[0];
-    if (!digest) {
+    const claimed = rows[0];
+    if (!claimed) {
       return { processed: false };
     }
+    const digest = normalizeClaimedDigest(claimed);
 
     const heartbeat = setInterval(async () => {
       try {
