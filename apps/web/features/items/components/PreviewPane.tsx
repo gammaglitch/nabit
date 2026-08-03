@@ -1,10 +1,7 @@
 "use client";
 
 import type { MouseEvent } from "react";
-import {
-  sourceColor,
-  sourceLabel,
-} from "@/features/shared/utils/source";
+import { sourceColor, sourceLabel } from "@/features/shared/utils/source";
 import type { DisplayItem, ItemDetail } from "../utils/item-helpers";
 import { RemovableTag } from "./RemovableTag";
 import type { TagPickerAnchor } from "./TagPicker";

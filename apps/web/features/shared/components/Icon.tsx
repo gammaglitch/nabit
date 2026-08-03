@@ -31,12 +31,7 @@ type IconProps = {
   stroke?: number;
 } & Omit<SVGProps<SVGSVGElement>, "name" | "stroke">;
 
-export function Icon({
-  name,
-  size = 14,
-  stroke = 1.5,
-  ...rest
-}: IconProps) {
+export function Icon({ name, size = 14, stroke = 1.5, ...rest }: IconProps) {
   return (
     <svg
       width={size}

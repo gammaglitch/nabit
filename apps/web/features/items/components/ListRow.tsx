@@ -67,7 +67,6 @@ export function ListRow({
     >
       <StarButton starred={starred} onToggle={onToggleStar} />
 
-
       <span>
         <span
           style={{

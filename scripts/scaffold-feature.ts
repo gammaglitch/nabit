@@ -53,7 +53,9 @@ function parseWords(value: string) {
 function toFeatureNames(rawName: string): FeatureNames {
   const words = parseWords(rawName);
   const kebab = words.join("-");
-  const pascal = words.map((word) => word[0].toUpperCase() + word.slice(1)).join("");
+  const pascal = words
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join("");
   const camel = `${words[0]}${pascal.slice(words[0].length)}`;
 
   return {
@@ -79,7 +81,11 @@ function ensureDir(relativeDir: string, dryRun: boolean) {
   }
 }
 
-function ensureNewFile(relativeFile: string, contents: string, dryRun: boolean) {
+function ensureNewFile(
+  relativeFile: string,
+  contents: string,
+  dryRun: boolean,
+) {
   const absoluteFile = join(rootDir, relativeFile);
 
   if (existsSync(absoluteFile)) {
@@ -93,7 +99,11 @@ function ensureNewFile(relativeFile: string, contents: string, dryRun: boolean) 
   }
 }
 
-function writeTextFile(relativeFile: string, contents: string, dryRun: boolean) {
+function writeTextFile(
+  relativeFile: string,
+  contents: string,
+  dryRun: boolean,
+) {
   if (!dryRun) {
     writeFileSync(join(rootDir, relativeFile), contents);
   }
@@ -196,7 +206,13 @@ export class ${names.pascal}Service implements ${names.pascal}ServiceContract {
 }
 
 function scaffoldTrpcFeature(names: FeatureNames, dryRun: boolean) {
-  const moduleDir = relativePath("packages", "trpc", "src", "modules", names.camel);
+  const moduleDir = relativePath(
+    "packages",
+    "trpc",
+    "src",
+    "modules",
+    names.camel,
+  );
 
   ensureNewFile(
     relativePath(moduleDir, "dto.ts"),
@@ -263,12 +279,20 @@ export const ${names.camel}Router = router({
   );
 
   if (!contextSource.includes(`  ${names.camel}: {`)) {
-    throw new Error(`Failed to register ${names.camel} in packages/trpc/src/context.ts`);
+    throw new Error(
+      `Failed to register ${names.camel} in packages/trpc/src/context.ts`,
+    );
   }
 
   writeTextFile(contextFile, contextSource, dryRun);
 
-  const appRouterFile = relativePath("packages", "trpc", "src", "routers", "_app.ts");
+  const appRouterFile = relativePath(
+    "packages",
+    "trpc",
+    "src",
+    "routers",
+    "_app.ts",
+  );
   let appRouterSource = readTextFile(appRouterFile);
 
   appRouterSource = insertImport(
@@ -285,7 +309,13 @@ export const ${names.camel}Router = router({
 }
 
 function scaffoldMobileFeature(names: FeatureNames, dryRun: boolean) {
-  const featureDir = relativePath("apps", "mobile", "src", "features", names.kebab);
+  const featureDir = relativePath(
+    "apps",
+    "mobile",
+    "src",
+    "features",
+    names.kebab,
+  );
 
   ensureNewFile(
     relativePath(featureDir, "hooks", `use${names.pascal}.ts`),
@@ -455,8 +485,8 @@ function parseArgs(argv: string[]) {
     };
   }
 
-  const explicitTargets = (["api", "trpc", "mobile", "web"] as const).filter((target) =>
-    flags.has(`--${target}`),
+  const explicitTargets = (["api", "trpc", "mobile", "web"] as const).filter(
+    (target) => flags.has(`--${target}`),
   );
   const targets =
     explicitTargets.length > 0
@@ -502,7 +532,14 @@ function main() {
   if (parsed.targets.includes("trpc")) {
     createdFiles.push(
       relativePath("packages", "trpc", "src", "modules", names.camel, "dto.ts"),
-      relativePath("packages", "trpc", "src", "modules", names.camel, "router.ts"),
+      relativePath(
+        "packages",
+        "trpc",
+        "src",
+        "modules",
+        names.camel,
+        "router.ts",
+      ),
     );
     touchedFiles.push(
       relativePath("packages", "trpc", "src", "context.ts"),
@@ -621,12 +658,18 @@ function main() {
   }
   console.log("- Add tests for the new feature.");
   if (parsed.targets.includes("mobile")) {
-    console.log("- Wire the new mobile screen or section into the app entrypoints where it belongs.");
+    console.log(
+      "- Wire the new mobile screen or section into the app entrypoints where it belongs.",
+    );
   }
   if (parsed.targets.includes("web")) {
-    console.log("- Wire the new web page or section into the app router where it belongs.");
+    console.log(
+      "- Wire the new web page or section into the app router where it belongs.",
+    );
   }
-  console.log("- Run `bun run check` and `bun run test` after finishing the implementation.");
+  console.log(
+    "- Run `bun run check` and `bun run test` after finishing the implementation.",
+  );
 }
 
 try {

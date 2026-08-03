@@ -43,7 +43,7 @@
           items.length,
           "items → status:",
           res.status,
-          res.responseText
+          res.responseText,
         );
       },
       onerror: (err) => {
@@ -77,15 +77,14 @@
       json?.data?.bookmark_timeline_v2?.timeline?.instructions ?? [];
 
     const addEntries = instructions.find(
-      (i) => i?.type === "TimelineAddEntries"
+      (i) => i?.type === "TimelineAddEntries",
     );
 
     const entries = addEntries?.entries ?? [];
     const output = [];
 
     for (const entry of entries) {
-      const tweetResult =
-        entry?.content?.itemContent?.tweet_results?.result;
+      const tweetResult = entry?.content?.itemContent?.tweet_results?.result;
       if (!tweetResult) continue;
 
       const legacy = tweetResult.legacy ?? {};

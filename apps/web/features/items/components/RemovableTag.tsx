@@ -11,7 +11,11 @@ type RemovableTagProps = {
   size?: Size;
 };
 
-export function RemovableTag({ tag, onRemove, size = "sm" }: RemovableTagProps) {
+export function RemovableTag({
+  tag,
+  onRemove,
+  size = "sm",
+}: RemovableTagProps) {
   const [hover, setHover] = useState(false);
   const fontSize = size === "md" ? 11 : 10;
   const padY = size === "md" ? 3 : 2;

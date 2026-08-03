@@ -2,6 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { RemovableTag } from "@/features/items/components/RemovableTag";
+import {
+  TagPicker,
+  type TagPickerAnchor,
+} from "@/features/items/components/TagPicker";
+import { useDigestOptIn } from "@/features/items/hooks/useDigestOptIn";
+import { useTagOperations } from "@/features/items/hooks/useTagOperations";
+import { toDisplayItem } from "@/features/items/utils/item-helpers";
 import { DigestToggle } from "@/features/shared/components/DigestToggle";
 import { Icon } from "@/features/shared/components/Icon";
 import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
@@ -12,14 +20,6 @@ import {
   sourceLabel,
   timeAgo,
 } from "@/features/shared/utils/source";
-import { RemovableTag } from "@/features/items/components/RemovableTag";
-import {
-  TagPicker,
-  type TagPickerAnchor,
-} from "@/features/items/components/TagPicker";
-import { useDigestOptIn } from "@/features/items/hooks/useDigestOptIn";
-import { useTagOperations } from "@/features/items/hooks/useTagOperations";
-import { toDisplayItem } from "@/features/items/utils/item-helpers";
 import { trpc } from "@/lib/trpc/react";
 import { ArticleChat } from "../components/ArticleChat";
 import { CommentTree } from "../components/CommentTree";

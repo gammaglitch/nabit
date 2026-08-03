@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/features/shared/components/Icon";
+import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
 import { useStarred } from "@/features/shared/hooks/useStarred";
 import { trpc } from "@/lib/trpc/react";
 import { CaptureModal } from "../components/CaptureModal";
@@ -11,7 +12,6 @@ import { LibrarySidebar } from "../components/LibrarySidebar";
 import { ListRow } from "../components/ListRow";
 import { PreviewPane } from "../components/PreviewPane";
 import { QueueStatus } from "../components/QueueStatus";
-import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
 import { SplitRow } from "../components/SplitRow";
 import { TagPicker, type TagPickerAnchor } from "../components/TagPicker";
 import { useTagOperations } from "../hooks/useTagOperations";

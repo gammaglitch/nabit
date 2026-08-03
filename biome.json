@@ -11,7 +11,8 @@
       "!**/coverage/**",
       "!**/src-tauri/gen/**",
       "!**/src-tauri/target/**",
-      "!**/.output/**"
+      "!**/.output/**",
+      "!**/drizzle/meta/**"
     ]
   },
   "formatter": {

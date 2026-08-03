@@ -68,10 +68,7 @@ const CommandList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive.List
     ref={ref}
-    className={cn(
-      "max-h-[320px] overflow-y-auto overflow-x-hidden",
-      className,
-    )}
+    className={cn("max-h-[320px] overflow-y-auto overflow-x-hidden", className)}
     {...props}
   />
 ));
@@ -152,11 +149,11 @@ function CommandShortcut({
 export {
   Command,
   CommandDialog,
-  CommandInput,
-  CommandList,
   CommandEmpty,
   CommandGroup,
+  CommandInput,
   CommandItem,
-  CommandShortcut,
+  CommandList,
   CommandSeparator,
+  CommandShortcut,
 };

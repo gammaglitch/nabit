@@ -123,7 +123,10 @@ export function renderComments(
 // Rewrites the root-relative asset URLs produced at ingest time
 // (![alt](/assets/<sha>)) into absolute URLs so external readers like Obsidian
 // can resolve the images. External URLs are left untouched.
-export function rewriteAssetUrls(markdown: string, assetBaseUrl?: string): string {
+export function rewriteAssetUrls(
+  markdown: string,
+  assetBaseUrl?: string,
+): string {
   if (!assetBaseUrl) {
     return markdown;
   }
