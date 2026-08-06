@@ -123,9 +123,10 @@ const detailItem: MockItem = {
   title: "Filing the corners off my MacBooks",
 };
 
-const { useQueryMock, mutateDigestOptIn } = vi.hoisted(() => ({
+const { useQueryMock, mutateDigestOptIn, mutateReextract } = vi.hoisted(() => ({
   useQueryMock: vi.fn(),
   mutateDigestOptIn: vi.fn().mockResolvedValue({ digestOptIn: true, id: 1 }),
+  mutateReextract: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -158,6 +159,13 @@ vi.mock("@/lib/trpc/react", () => {
             mutateAsync: mutateDigestOptIn,
           }),
         },
+        reextract: {
+          useMutation: () => ({
+            isPending: false,
+            mutate: vi.fn(),
+            mutateAsync: mutateReextract,
+          }),
+        },
       },
       tags: {
         list: {
@@ -178,6 +186,16 @@ vi.mock("@/lib/trpc/react", () => {
 describe("ReaderPage", () => {
   beforeEach(() => {
     mutateDigestOptIn.mockClear();
+    mutateReextract.mockReset();
+    mutateReextract.mockResolvedValue({
+      applied: true,
+      extractionId: 9,
+      ingestor: "generic",
+      itemId: 2,
+      snapshotId: 41,
+      snapshotsExtracted: 1,
+      status: "success",
+    });
   });
 
   test("renders an HN thread with its linked article body and comments", () => {
@@ -333,5 +351,80 @@ describe("ReaderPage", () => {
       digestOptIn: false,
       id: 1,
     });
+  });
+
+  test("re-extract targets the linked article, which is the body on screen", async () => {
+    useQueryMock.mockReturnValue({
+      data: { item: detailItem },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-extract" }));
+
+    // The thread is item 1; the article body rendered under it is item 2.
+    // Re-extracting the thread would leave the visible content untouched.
+    expect(mutateReextract).toHaveBeenCalledWith({ id: 2 });
+    expect(
+      await screen.findByRole("button", { name: "Re-extracted" }),
+    ).toBeInTheDocument();
+  });
+
+  test("re-extract targets the item itself when there is no linked article", () => {
+    useQueryMock.mockReturnValue({
+      data: { item: { ...detailItem, linkedItem: null } },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-extract" }));
+
+    expect(mutateReextract).toHaveBeenCalledWith({ id: 1 });
+  });
+
+  test("says so when every snapshot failed and the content was kept", async () => {
+    mutateReextract.mockResolvedValue({
+      applied: false,
+      extractionId: 9,
+      ingestor: "generic",
+      itemId: 2,
+      snapshotId: null,
+      snapshotsExtracted: 1,
+      status: "failed",
+    });
+    useQueryMock.mockReturnValue({
+      data: { item: detailItem },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-extract" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Nothing extracted" }),
+    ).toBeInTheDocument();
+  });
+
+  test("surfaces a failed request instead of looking like it worked", async () => {
+    mutateReextract.mockRejectedValue(new Error("boom"));
+    useQueryMock.mockReturnValue({
+      data: { item: detailItem },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-extract" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Re-extract failed" }),
+    ).toBeInTheDocument();
   });
 });

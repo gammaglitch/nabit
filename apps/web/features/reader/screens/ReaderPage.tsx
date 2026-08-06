@@ -2,6 +2,15 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { RemovableTag } from "@/features/items/components/RemovableTag";
+import {
+  TagPicker,
+  type TagPickerAnchor,
+} from "@/features/items/components/TagPicker";
+import { useDigestOptIn } from "@/features/items/hooks/useDigestOptIn";
+import { useReextract } from "@/features/items/hooks/useReextract";
+import { useTagOperations } from "@/features/items/hooks/useTagOperations";
+import { toDisplayItem } from "@/features/items/utils/item-helpers";
 import { DigestToggle } from "@/features/shared/components/DigestToggle";
 import { Icon } from "@/features/shared/components/Icon";
 import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
@@ -12,18 +21,11 @@ import {
   sourceLabel,
   timeAgo,
 } from "@/features/shared/utils/source";
-import { RemovableTag } from "@/features/items/components/RemovableTag";
-import {
-  TagPicker,
-  type TagPickerAnchor,
-} from "@/features/items/components/TagPicker";
-import { useDigestOptIn } from "@/features/items/hooks/useDigestOptIn";
-import { useTagOperations } from "@/features/items/hooks/useTagOperations";
-import { toDisplayItem } from "@/features/items/utils/item-helpers";
 import { trpc } from "@/lib/trpc/react";
 import { ArticleChat } from "../components/ArticleChat";
 import { CommentTree } from "../components/CommentTree";
 import { MarkdownArticle } from "../components/MarkdownArticle";
+import { ReextractButton } from "../components/ReextractButton";
 
 type RailTab = "comments" | "chat";
 
@@ -35,6 +37,7 @@ export default function ReaderPage({ id }: { id: number }) {
   const { isStarred, toggleStarred } = useStarred();
   const { addTag, removeTag } = useTagOperations();
   const { toggleDigestOptIn, isTogglingDigestOptIn } = useDigestOptIn();
+  const { reextractItem, isReextracting } = useReextract();
 
   const detailQuery = trpc.ingest.get.useQuery(
     { id },
@@ -91,6 +94,9 @@ export default function ReaderPage({ id }: { id: number }) {
     : isThread
       ? ""
       : (raw.contentMarkdown ?? raw.contentText ?? "");
+  // Re-extract whatever produced the body on screen: for a thread with an
+  // attached article that is the linked item, not the thread itself.
+  const bodyItemId = hasLinkedArticle && linkedItem ? linkedItem.id : raw.id;
   const srcCol = sourceColor(item.source);
   const starred = isStarred(item.id);
   const comments = raw.comments;
@@ -238,6 +244,11 @@ export default function ReaderPage({ id }: { id: number }) {
             <Icon name="external" size={12} /> Source
           </a>
         )}
+        <ReextractButton
+          disabled={isReextracting}
+          onReextract={() => reextractItem(bodyItemId)}
+          style={{ fontSize: 11, letterSpacing: "0.06em", padding: "5px 10px" }}
+        />
         <DigestToggle
           digestOptIn={raw.digestOptIn}
           disabled={isTogglingDigestOptIn}
