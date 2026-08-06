@@ -7,6 +7,112 @@ const turndown = new TurndownService({
   linkStyle: "inlined",
 });
 
+const EMBED_TAGS: (keyof HTMLElementTagNameMap)[] = [
+  "audio",
+  "embed",
+  "iframe",
+  "object",
+  "video",
+];
+
+const VIDEO_HOSTS = new Set([
+  "dailymotion.com",
+  "player.twitch.tv",
+  "player.vimeo.com",
+  "twitch.tv",
+  "v.qq.com",
+  "videopress.com",
+  "vimeo.com",
+  "youtu.be",
+  "youtube-nocookie.com",
+  "youtube.com",
+]);
+
+function embedSource(node: HTMLElement) {
+  const direct =
+    node.getAttribute("src") ?? node.getAttribute("data") ?? undefined;
+  if (direct) {
+    return direct;
+  }
+
+  return node.querySelector?.("source[src]")?.getAttribute("src") ?? null;
+}
+
+/**
+ * Turn a player URL into something a reader can actually open. Embed URLs
+ * work in an iframe but are unhelpful as plain links.
+ */
+function canonicalEmbedUrl(url: URL) {
+  const host = url.hostname.replace(/^www\./, "").toLowerCase();
+
+  if (host === "youtube.com" || host === "youtube-nocookie.com") {
+    const id = url.pathname.match(/^\/embed\/([^/?#]+)/)?.[1];
+    if (id) {
+      return new URL(`https://www.youtube.com/watch?v=${id}`);
+    }
+  }
+
+  if (host === "player.vimeo.com") {
+    const id = url.pathname.match(/^\/video\/([^/?#]+)/)?.[1];
+    if (id) {
+      return new URL(`https://vimeo.com/${id}`);
+    }
+  }
+
+  return url;
+}
+
+function embedLabel(node: HTMLElement, host: string) {
+  const title = node.getAttribute("title")?.trim();
+  if (title) {
+    return title;
+  }
+
+  const tag = node.nodeName.toLowerCase();
+  if (tag === "audio") {
+    return `Audio (${host})`;
+  }
+  if (tag === "video" || VIDEO_HOSTS.has(host)) {
+    return `Video (${host})`;
+  }
+
+  return `Embedded content (${host})`;
+}
+
+/**
+ * Turndown has no rule for embed elements, and since they carry no text
+ * children the default rule renders them as an empty string — silently
+ * deleting every video from an archived article. Keep the destination as a
+ * plain link instead so the reference survives the capture.
+ */
+turndown.addRule("embeds", {
+  filter: EMBED_TAGS,
+  replacement(_content, node) {
+    const element = node as unknown as HTMLElement;
+    const source = embedSource(element);
+    if (!source) {
+      return "";
+    }
+
+    // Only absolute sources: Readability rewrites relative URIs before we get
+    // here, and Turndown's DOM has no usable base URI to resolve against.
+    let url: URL;
+    try {
+      url = new URL(source);
+    } catch {
+      return "";
+    }
+
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return "";
+    }
+
+    const canonical = canonicalEmbedUrl(url);
+    const host = canonical.hostname.replace(/^www\./, "");
+    return `\n\n[${embedLabel(element, host)}](${canonical.toString()})\n\n`;
+  },
+});
+
 export function htmlToMarkdown(html: string | null | undefined) {
   if (!html) {
     return null;

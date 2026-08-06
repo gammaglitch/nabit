@@ -4,13 +4,13 @@ import {
   type ExtractionStatus,
   fetchText,
   getIngestor as getIngestorByName,
+  htmlToMarkdown,
   type Ingestor,
   type IngestorName,
   normalizeSourceUrl,
   type SnapshotArtifact,
 } from "@repo/ingestors";
 import { JSDOM } from "jsdom";
-import TurndownService from "turndown";
 import type { AppEnv } from "../../lib/config/env";
 import { countWords, firstString, normalizeIsoDate } from "./ingestor-util";
 
@@ -29,21 +29,6 @@ export {
 const EXTRACTOR_VERSION = "0.1.0";
 const ARTICLE_MIN_WORDS = 20;
 const ARTICLE_PARTIAL_WORDS = 100;
-
-const turndown = new TurndownService({
-  bulletListMarker: "-",
-  codeBlockStyle: "fenced",
-  headingStyle: "atx",
-  linkStyle: "inlined",
-});
-
-function htmlToMarkdown(html: string | null | undefined) {
-  if (!html) {
-    return null;
-  }
-  const converted = turndown.turndown(html).trim();
-  return converted.length > 0 ? converted : null;
-}
 
 function findPublishedAt(document: Document) {
   const selectors = [
