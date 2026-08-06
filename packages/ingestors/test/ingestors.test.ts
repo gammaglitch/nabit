@@ -1,9 +1,50 @@
 import { describe, expect, test } from "bun:test";
 import {
   getIngestor,
+  htmlToMarkdown,
   normalizeSourceUrl,
   resolveIngestorName,
 } from "../src/index";
+
+describe("htmlToMarkdown", () => {
+  test("keeps embedded videos as links instead of dropping them", () => {
+    const markdown = htmlToMarkdown(
+      `<p>Before</p>
+       <iframe class="youtube-player" src="https://www.youtube.com/embed/hILHqNzlZkc?version=3&amp;rel=1"></iframe>
+       <p>After</p>`,
+    );
+
+    expect(markdown).toContain(
+      "[Video (youtube.com)](https://www.youtube.com/watch?v=hILHqNzlZkc)",
+    );
+    expect(markdown).toContain("Before");
+    expect(markdown).toContain("After");
+  });
+
+  test("canonicalizes vimeo players and prefers the title attribute", () => {
+    expect(
+      htmlToMarkdown(
+        '<iframe title="Rings tutorial" src="https://player.vimeo.com/video/76979871?h=abc"></iframe>',
+      ),
+    ).toBe("[Rings tutorial](https://vimeo.com/76979871)");
+  });
+
+  test("labels unknown embed hosts without pretending they are video", () => {
+    expect(
+      htmlToMarkdown('<iframe src="https://example.com/widget"></iframe>'),
+    ).toBe("[Embedded content (example.com)](https://example.com/widget)");
+  });
+
+  test("reads nested sources and skips embeds with no usable url", () => {
+    expect(
+      htmlToMarkdown(
+        '<video><source src="https://cdn.example.com/clip.mp4" /></video>',
+      ),
+    ).toBe("[Video (cdn.example.com)](https://cdn.example.com/clip.mp4)");
+    expect(htmlToMarkdown('<iframe src="about:blank"></iframe>')).toBeNull();
+    expect(htmlToMarkdown("<iframe></iframe>")).toBeNull();
+  });
+});
 
 describe("normalizeSourceUrl", () => {
   test("strips tracking params and normalizes hostname", () => {

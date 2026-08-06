@@ -29,6 +29,8 @@ import type {
   ItemListOutputDTO,
   ListIngestJobsInputDTO,
   ListIngestJobsOutputDTO,
+  ReextractInputDTO,
+  ReextractOutputDTO,
   SetDigestOptInInputDTO,
   SetDigestOptInOutputDTO,
 } from "./modules/ingest/dto";
@@ -109,6 +111,9 @@ export interface TrpcServices {
     get(
       input: GetItemInputDTO,
     ): ItemDetailOutputDTO | Promise<ItemDetailOutputDTO>;
+    reextract(
+      input: ReextractInputDTO,
+    ): ReextractOutputDTO | Promise<ReextractOutputDTO>;
     delete(input: DeleteInputDTO): DeleteOutputDTO | Promise<DeleteOutputDTO>;
     setDigestOptIn(
       input: SetDigestOptInInputDTO,

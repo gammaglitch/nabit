@@ -198,6 +198,27 @@ export const GetItemInput = z.object({
   id: z.number(),
 });
 
+export const ReextractInput = z.object({
+  id: z.number(),
+  // Override the ingestor the URL would normally resolve to. Mirrors `ingest`,
+  // and lets a mis-routed item be re-extracted correctly without re-capturing.
+  ingestor: IngestorName.nullish(),
+});
+
+export const ReextractOutput = z.object({
+  itemId: z.number(),
+  ingestor: IngestorName,
+  // The snapshot whose extraction won, not the newest one — with a rendered
+  // browser capture alongside the raw fetch, either may be the better source.
+  snapshotId: z.number().nullable(),
+  snapshotsExtracted: z.number().int().positive(),
+  extractionId: z.number().nullable(),
+  status: ExtractionStatus,
+  // False when every attempt failed, in which case the item keeps the content
+  // from whichever earlier run succeeded.
+  applied: z.boolean(),
+});
+
 export const SetDigestOptInInput = z.object({
   id: z.number(),
   digestOptIn: z.boolean(),
@@ -218,5 +239,7 @@ export type ItemDetailOutputDTO = z.infer<typeof ItemDetailOutput>;
 export type DeleteInputDTO = z.infer<typeof DeleteInput>;
 export type DeleteOutputDTO = z.infer<typeof DeleteOutput>;
 export type GetItemInputDTO = z.infer<typeof GetItemInput>;
+export type ReextractInputDTO = z.infer<typeof ReextractInput>;
+export type ReextractOutputDTO = z.infer<typeof ReextractOutput>;
 export type SetDigestOptInInputDTO = z.infer<typeof SetDigestOptInInput>;
 export type SetDigestOptInOutputDTO = z.infer<typeof SetDigestOptInOutput>;
