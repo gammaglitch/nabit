@@ -16,6 +16,7 @@ import type { AssetService } from "../assets/service";
 import type {
   ExtractionAttempt,
   ExtractionStatus,
+  Ingestor,
   IngestorName,
   ItemIdentity,
 } from "./ingestors";
@@ -124,6 +125,52 @@ function preferExtraction(
   const candidateLength = candidate.contentText?.length ?? 0;
 
   return candidateLength > currentLength ? candidate : current;
+}
+
+type StoredSnapshot = {
+  body: string;
+  contentType: string;
+  id: number;
+};
+
+/**
+ * Replays an ingestor's extractor over snapshots we already archived and picks
+ * the best result, using the same preference rules as a fresh ingest.
+ *
+ * Deliberately offline. The snapshot body is the exact bytes captured at
+ * ingest time, so an extractor fix can be rolled out across the archive
+ * without re-fetching the original sites — which would mean re-hammering
+ * them, and would silently swap the archived copy for whatever the page says
+ * today (or a 404, or a paywall).
+ *
+ * Exported so the selection logic is testable; `reextract` around it is
+ * database I/O.
+ */
+export async function reextractSnapshots(input: {
+  ingestor: Pick<Ingestor, "extract">;
+  snapshots: StoredSnapshot[];
+  url: string;
+}) {
+  const attempts: Array<{ attempt: ExtractionAttempt; snapshotId: number }> =
+    [];
+  let preferred: ExtractionAttempt | null = null;
+  let preferredSnapshotId: number | null = null;
+
+  for (const snapshot of input.snapshots) {
+    const attempt = await input.ingestor.extract({
+      snapshot: { body: snapshot.body, contentType: snapshot.contentType },
+      url: input.url,
+    });
+    attempts.push({ attempt, snapshotId: snapshot.id });
+
+    const winner = preferExtraction(preferred, attempt);
+    if (winner !== preferred) {
+      preferred = winner;
+      preferredSnapshotId = snapshot.id;
+    }
+  }
+
+  return { attempts, preferred, preferredSnapshotId };
 }
 
 type ItemRow = typeof itemsTable.$inferSelect;
@@ -830,6 +877,118 @@ export class IngestService implements IngestServiceContract {
     }
 
     return updated;
+  }
+
+  /**
+   * Re-runs extraction for an item against its archived snapshots. Use after
+   * an extractor fix to bring an already-captured item up to date.
+   *
+   * Never re-fetches the source. Every extraction attempt is recorded against
+   * the snapshot it ran on, so the history of what the extractor did stays
+   * intact rather than being overwritten.
+   */
+  async reextract(input: { id: number; ingestor?: IngestorName | null }) {
+    const db = requireDatabase(this.database);
+
+    const [item] = await db
+      .select({
+        externalId: itemsTable.externalId,
+        id: itemsTable.id,
+        sourceType: itemsTable.sourceType,
+        sourceUrl: itemsTable.sourceUrl,
+      })
+      .from(itemsTable)
+      .where(eq(itemsTable.id, input.id))
+      .limit(1);
+
+    if (!item) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `Item ${input.id} not found`,
+      });
+    }
+
+    // Extractors resolve relative URLs against this and Readability needs it
+    // to build a document, so there is nothing sensible to re-extract without.
+    if (!item.sourceUrl) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `Item ${input.id} has no source URL to re-extract against`,
+      });
+    }
+
+    const snapshots = await db
+      .select({
+        body: rawSnapshotsTable.body,
+        contentType: rawSnapshotsTable.contentType,
+        id: rawSnapshotsTable.id,
+      })
+      .from(rawSnapshotsTable)
+      .where(eq(rawSnapshotsTable.itemId, item.id))
+      .orderBy(rawSnapshotsTable.id);
+
+    if (snapshots.length === 0) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `Item ${input.id} has no archived snapshot to re-extract from`,
+      });
+    }
+
+    const ingestorName = resolveIngestorName(
+      item.sourceUrl,
+      input.ingestor ?? null,
+    );
+    const { attempts, preferred, preferredSnapshotId } =
+      await reextractSnapshots({
+        ingestor: getIngestor(ingestorName),
+        snapshots,
+        url: item.sourceUrl,
+      });
+
+    let latestExtractionId: number | null = null;
+    for (const { attempt, snapshotId } of attempts) {
+      const [stored] = await db
+        .insert(extractionsTable)
+        .values({
+          errorMessage: attempt.errorMessage ?? null,
+          extractor: attempt.extractor,
+          extractorVersion: attempt.extractorVersion ?? null,
+          itemId: attempt.status === "failed" ? null : item.id,
+          snapshotId,
+          status: attempt.status,
+        })
+        .returning({ id: extractionsTable.id });
+      latestExtractionId = stored.id;
+    }
+
+    // A re-extraction that fails leaves the item alone. The content we already
+    // have came from a run that worked, and is better than nothing.
+    const applied = Boolean(preferred && preferred.status !== "failed");
+    if (preferred && applied) {
+      const withAssets = await this.processExtractionAssets(preferred, {
+        itemId: item.id,
+        sourceUrl: item.sourceUrl,
+      });
+      await this.applyExtraction(db, {
+        extraction: withAssets,
+        fallbackIdentity: {
+          externalId: item.externalId ?? item.sourceUrl,
+          sourceType: item.sourceType,
+          sourceUrl: item.sourceUrl,
+        },
+        itemId: item.id,
+      });
+    }
+
+    return {
+      applied,
+      extractionId: latestExtractionId,
+      ingestor: ingestorName,
+      itemId: item.id,
+      snapshotId: preferredSnapshotId,
+      snapshotsExtracted: snapshots.length,
+      status: preferred?.status ?? "failed",
+    };
   }
 
   private async summarizeItemRows(db: Database, rows: ItemRow[]) {
