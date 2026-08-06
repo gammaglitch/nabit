@@ -113,3 +113,120 @@ describe("tweet ingestor", () => {
     expect(extraction.externalId).toBe("123");
   });
 });
+
+describe("reddit ingestor", () => {
+  const threadUrl = "https://reddit.com/r/typescript/comments/abc123/demo";
+
+  function redditListing(postId = "abc123") {
+    return [
+      {
+        data: {
+          children: [
+            {
+              data: {
+                author: "delta",
+                created_utc: 1539202764,
+                id: postId,
+                is_self: true,
+                name: `t3_${postId}`,
+                num_comments: 1,
+                permalink: `/r/typescript/comments/${postId}/demo/`,
+                score: 42,
+                selftext: "Ship **it**.",
+                subreddit: "typescript",
+                title: "Demo thread",
+              },
+            },
+          ],
+        },
+      },
+      {
+        data: {
+          children: [
+            {
+              data: { author: "echo", body: "Nice.", id: "c1", name: "t1_c1" },
+              kind: "t1",
+            },
+          ],
+        },
+      },
+    ];
+  }
+
+  /** Fails the test if the ingestor reaches the network during `fn`. */
+  async function withoutNetwork<T>(fn: () => Promise<T>) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => {
+      throw new Error("capture should not have fetched");
+    }) as typeof fetch;
+
+    try {
+      return await fn();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  test("captures a client-supplied listing without fetching", async () => {
+    const reddit = getIngestor("reddit");
+    const payload = redditListing();
+
+    const capture = await withoutNetwork(() =>
+      reddit.capture({ payload, url: threadUrl }),
+    );
+
+    expect(capture.snapshots).toHaveLength(1);
+    expect(capture.snapshots[0].contentType).toBe("application/json");
+    expect(JSON.parse(capture.snapshots[0].body)).toEqual(payload);
+  });
+
+  test("a client-captured thread extracts like a server-fetched one", async () => {
+    const reddit = getIngestor("reddit");
+
+    const capture = await withoutNetwork(() =>
+      reddit.capture({ payload: redditListing(), url: threadUrl }),
+    );
+    const identity = reddit.identify({
+      snapshots: capture.snapshots,
+      url: threadUrl,
+    });
+    const extraction = await reddit.extract({
+      snapshot: capture.snapshots[0],
+      url: threadUrl,
+    });
+
+    expect(identity.externalId).toBe("abc123");
+    expect(identity.sourceType).toBe("reddit_post");
+    expect(extraction.status).toBe("success");
+    expect(extraction.title).toBe("Demo thread");
+    expect(extraction.author).toBe("delta");
+    expect(extraction.contentText).toBe("Ship **it**.");
+    expect(extraction.metadata?.subreddit).toBe("typescript");
+    expect(extraction.comments).toHaveLength(1);
+    expect(extraction.comments?.[0].contentText).toBe("Nice.");
+  });
+
+  test("rejects a listing for a different post than the url", async () => {
+    const reddit = getIngestor("reddit");
+
+    await expect(
+      withoutNetwork(() =>
+        reddit.capture({ payload: redditListing("zzz999"), url: threadUrl }),
+      ),
+    ).rejects.toThrow(/zzz999/);
+  });
+
+  test("rejects payloads that are not a reddit listing", async () => {
+    const reddit = getIngestor("reddit");
+
+    await expect(
+      withoutNetwork(() =>
+        reddit.capture({ payload: { title: "nope" }, url: threadUrl }),
+      ),
+    ).rejects.toThrow(/must be the raw .json listing array/);
+
+    await expect(
+      withoutNetwork(() => reddit.capture({ payload: [], url: threadUrl })),
+    ).rejects.toThrow(/does not contain a post listing/);
+  });
+});

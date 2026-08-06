@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
 import { ingestBookmarks, ingestTabs } from "@/lib/api";
+import type {
+  CaptureThreadRequest,
+  CaptureThreadResponse,
+} from "@/lib/messages";
+import { parseRedditThreadUrl, type RedditThread } from "@/lib/reddit";
 
 type Tab = chrome.tabs.Tab;
 type Bookmark = chrome.bookmarks.BookmarkTreeNode;
@@ -13,6 +18,18 @@ export default function App() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<Status>(null);
   const [sending, setSending] = useState(false);
+  const [thread, setThread] = useState<RedditThread | null>(null);
+  const [threadTitle, setThreadTitle] = useState("");
+  const [capturing, setCapturing] = useState(false);
+
+  // The reddit capture acts on whatever thread is open right now, so it is
+  // independent of the tabs/bookmarks selection below.
+  useEffect(() => {
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+      setThread(parseRedditThreadUrl(tab?.url));
+      setThreadTitle(tab?.title ?? "");
+    });
+  }, []);
 
   useEffect(() => {
     if (view === "tabs") {
@@ -43,6 +60,39 @@ export default function App() {
         ? tabs.map((t) => String(t.id))
         : bookmarks.map((b) => b.id);
     setSelected(selected.size === ids.length ? new Set() : new Set(ids));
+  }
+
+  async function capture() {
+    if (!thread) return;
+    setCapturing(true);
+    setStatus(null);
+
+    try {
+      // The background worker does the fetch + POST so it survives this popup
+      // closing. See entrypoints/background.ts.
+      const response = (await chrome.runtime.sendMessage({
+        type: "capture-reddit-thread",
+        url: thread.url,
+      } satisfies CaptureThreadRequest)) as CaptureThreadResponse;
+
+      setStatus(
+        response.ok
+          ? {
+              message: response.reused
+                ? "already in flight"
+                : `r/${thread.subreddit} queued`,
+              error: false,
+            }
+          : { message: response.error, error: true },
+      );
+    } catch (err) {
+      setStatus({
+        message: err instanceof Error ? err.message : "Unknown error",
+        error: true,
+      });
+    } finally {
+      setCapturing(false);
+    }
   }
 
   async function send() {
@@ -97,6 +147,27 @@ export default function App() {
           {selected.size}/{items.length}
         </span>
       </div>
+
+      {/* Reddit thread capture — only when the active tab is a thread */}
+      {thread && (
+        <div style={styles.capturePanel}>
+          <div style={styles.captureLabel}>REDDIT THREAD</div>
+          <div style={styles.captureTitle}>{threadTitle || thread.url}</div>
+          <div style={styles.captureMeta}>r/{thread.subreddit}</div>
+          <button
+            type="button"
+            onClick={capture}
+            disabled={capturing}
+            style={{
+              ...styles.btnPrimary,
+              marginTop: 10,
+              opacity: capturing ? 0.4 : 1,
+            }}
+          >
+            {capturing ? "CAPTURING..." : "CAPTURE THREAD"}
+          </button>
+        </div>
+      )}
 
       {/* View toggle */}
       <div style={styles.segmented}>
@@ -197,6 +268,37 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     letterSpacing: "0.04em",
     color: "#666",
+  },
+  capturePanel: {
+    display: "flex",
+    flexDirection: "column",
+    margin: "0 16px 12px",
+    padding: 12,
+    border: "1px solid #333",
+    borderRadius: 8,
+  },
+  captureLabel: {
+    fontFamily: "'Space Mono', monospace",
+    fontSize: 10,
+    letterSpacing: "0.08em",
+    color: "#666",
+  },
+  captureTitle: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 1.4,
+    color: "#E8E8E8",
+    display: "-webkit-box",
+    WebkitBoxOrient: "vertical" as const,
+    WebkitLineClamp: 2,
+    overflow: "hidden",
+  },
+  captureMeta: {
+    marginTop: 4,
+    fontFamily: "'Space Mono', monospace",
+    fontSize: 11,
+    color: "#666",
+    letterSpacing: "0.02em",
   },
   segmented: {
     display: "flex",

@@ -127,24 +127,58 @@ function getTweetId(url: string, payload?: unknown) {
   return match?.[1] ?? null;
 }
 
+function getRedditPostIdFromListing(listing: unknown) {
+  const post = Array.isArray(listing)
+    ? listing[0]?.data?.children?.[0]?.data
+    : undefined;
+  const fromPayload = firstString(post?.id, post?.name);
+  return fromPayload ? fromPayload.replace(/^t3_/, "") : null;
+}
+
+function getRedditPostIdFromUrl(url: string) {
+  return new URL(url).pathname.match(/\/comments\/([^/]+)/)?.[1] ?? null;
+}
+
 function getRedditPostId(url: string, body?: string) {
   if (body) {
     try {
-      const payload = parseJson<any[]>(body);
-      const fromPayload = firstString(
-        payload?.[0]?.data?.children?.[0]?.data?.id,
-        payload?.[0]?.data?.children?.[0]?.data?.name,
-      );
+      const fromPayload = getRedditPostIdFromListing(parseJson<any[]>(body));
       if (fromPayload) {
-        return fromPayload.replace(/^t3_/, "");
+        return fromPayload;
       }
     } catch {
       // Ignore malformed capture bodies and fall back to the URL.
     }
   }
 
-  const match = new URL(url).pathname.match(/\/comments\/([^/]+)/);
-  return match?.[1] ?? null;
+  return getRedditPostIdFromUrl(url);
+}
+
+/**
+ * Reddit payloads supplied by a caller (the browser extension) are untrusted
+ * input, so reject anything that is not the listing pair for the thread we were
+ * asked to archive. Without this a junk payload would archive an empty item
+ * under a perfectly valid URL, which reads as a successful ingest.
+ */
+function assertRedditListingMatchesUrl(payload: unknown, url: string) {
+  if (!Array.isArray(payload)) {
+    throw new Error(
+      "Reddit payload must be the raw .json listing array, got " +
+        (payload === null ? "null" : typeof payload),
+    );
+  }
+
+  const payloadPostId = getRedditPostIdFromListing(payload);
+  if (!payloadPostId) {
+    throw new Error("Reddit payload does not contain a post listing");
+  }
+
+  const urlPostId = getRedditPostIdFromUrl(url);
+  if (urlPostId && urlPostId.toLowerCase() !== payloadPostId.toLowerCase()) {
+    throw new Error(
+      `Reddit payload is for post ${payloadPostId} but ${url} is post ${urlPostId}`,
+    );
+  }
 }
 
 function getHackerNewsItemId(url: string, body?: string) {
@@ -163,10 +197,20 @@ function getHackerNewsItemId(url: string, body?: string) {
   return new URL(url).searchParams.get("id");
 }
 
+/**
+ * Keep in sync with `buildThreadJsonUrl` in `apps/extension/lib/reddit.ts` — the
+ * extension captures the same bytes from the user's browser, and the two paths
+ * are only interchangeable if they request the same representation.
+ *
+ * `raw_json=1` stops reddit HTML-escaping `&<>` inside selftext and comment
+ * bodies; `limit=500` widens the comment page beyond the default handful.
+ */
 function buildRedditJsonUrl(url: string) {
-  const parsed = new URL(url);
-  const jsonUrl = new URL(parsed.toString());
-  jsonUrl.pathname = `${parsed.pathname.replace(/\/+$/, "")}.json`;
+  const jsonUrl = new URL(url);
+  jsonUrl.pathname = `${jsonUrl.pathname.replace(/\/+$/, "")}.json`;
+  jsonUrl.search = "";
+  jsonUrl.searchParams.set("limit", "500");
+  jsonUrl.searchParams.set("raw_json", "1");
   return jsonUrl.toString();
 }
 
@@ -401,7 +445,25 @@ const redditIngestor: Ingestor = {
       url.hostname === "reddit.com" && /\/r\/.+\/comments\//.test(url.pathname)
     );
   },
-  async capture({ url }) {
+  async capture({ payload, url }) {
+    // Client-supplied capture. The browser extension fetches this exact `.json`
+    // from the user's own machine, so reddit sees a residential IP instead of
+    // the worker's egress (which it increasingly 403s — see compose.vpn.yml).
+    // The bytes are the same either way, so identify/extract are unchanged and
+    // re-extracting a stored snapshot still works regardless of who fetched it.
+    if (payload !== undefined && payload !== null) {
+      assertRedditListingMatchesUrl(payload, url);
+
+      return {
+        snapshots: [
+          {
+            body: JSON.stringify(payload),
+            contentType: "application/json",
+          },
+        ],
+      };
+    }
+
     const response = await fetchText(buildRedditJsonUrl(url), {
       headers: {
         "User-Agent": "nabit/0.1",
