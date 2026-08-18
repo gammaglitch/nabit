@@ -9,6 +9,7 @@ import {
 } from "@/features/items/components/TagPicker";
 import { useDigestOptIn } from "@/features/items/hooks/useDigestOptIn";
 import { useReextract } from "@/features/items/hooks/useReextract";
+import { useRefreshSource } from "@/features/items/hooks/useRefreshSource";
 import { useTagOperations } from "@/features/items/hooks/useTagOperations";
 import { toDisplayItem } from "@/features/items/utils/item-helpers";
 import { DigestToggle } from "@/features/shared/components/DigestToggle";
@@ -26,6 +27,7 @@ import { ArticleChat } from "../components/ArticleChat";
 import { CommentTree } from "../components/CommentTree";
 import { MarkdownArticle } from "../components/MarkdownArticle";
 import { ReextractButton } from "../components/ReextractButton";
+import { RefreshButton } from "../components/RefreshButton";
 
 type RailTab = "comments" | "chat";
 
@@ -38,6 +40,7 @@ export default function ReaderPage({ id }: { id: number }) {
   const { addTag, removeTag } = useTagOperations();
   const { toggleDigestOptIn, isTogglingDigestOptIn } = useDigestOptIn();
   const { reextractItem, isReextracting } = useReextract();
+  const { refreshItem, refreshStatus, isRefreshing } = useRefreshSource();
 
   const detailQuery = trpc.ingest.get.useQuery(
     { id },
@@ -247,6 +250,15 @@ export default function ReaderPage({ id }: { id: number }) {
         <ReextractButton
           disabled={isReextracting}
           onReextract={() => reextractItem(bodyItemId)}
+          style={{ fontSize: 11, letterSpacing: "0.06em", padding: "5px 10px" }}
+        />
+        {/* Refreshes the item on screen rather than `bodyItemId`: comments are
+            the reason to go back to a source, and they hang off the thread. A
+            thread's attached article is re-fetched by the same job anyway. */}
+        <RefreshButton
+          disabled={isRefreshing}
+          onRefresh={() => void refreshItem(raw.id)}
+          status={refreshStatus}
           style={{ fontSize: 11, letterSpacing: "0.06em", padding: "5px 10px" }}
         />
         <DigestToggle

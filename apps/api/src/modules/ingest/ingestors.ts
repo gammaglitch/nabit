@@ -127,6 +127,7 @@ type GenericCaptureInput = {
 
 const genericIngestor = {
   name: "generic" as const,
+  refetchable: true,
   matches() {
     return true;
   },

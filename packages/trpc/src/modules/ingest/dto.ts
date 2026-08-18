@@ -219,6 +219,20 @@ export const ReextractOutput = z.object({
   applied: z.boolean(),
 });
 
+export const RefreshInput = z.object({
+  id: z.number(),
+});
+
+export const RefreshOutput = z.object({
+  itemId: z.number(),
+  // The capture runs on the ingest worker, so all a caller gets back is the
+  // job to watch. The item only changes once that job succeeds.
+  job: IngestJobOutput,
+  // True when a capture of this URL was already in flight and this refresh
+  // piggybacked on it rather than queueing a second fetch.
+  reused: z.boolean(),
+});
+
 export const SetDigestOptInInput = z.object({
   id: z.number(),
   digestOptIn: z.boolean(),
@@ -241,5 +255,7 @@ export type DeleteOutputDTO = z.infer<typeof DeleteOutput>;
 export type GetItemInputDTO = z.infer<typeof GetItemInput>;
 export type ReextractInputDTO = z.infer<typeof ReextractInput>;
 export type ReextractOutputDTO = z.infer<typeof ReextractOutput>;
+export type RefreshInputDTO = z.infer<typeof RefreshInput>;
+export type RefreshOutputDTO = z.infer<typeof RefreshOutput>;
 export type SetDigestOptInInputDTO = z.infer<typeof SetDigestOptInInput>;
 export type SetDigestOptInOutputDTO = z.infer<typeof SetDigestOptInOutput>;

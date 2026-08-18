@@ -19,6 +19,8 @@ import {
   ListIngestJobsOutput,
   ReextractInput,
   ReextractOutput,
+  RefreshInput,
+  RefreshOutput,
   SetDigestOptInInput,
   SetDigestOptInOutput,
 } from "./dto";
@@ -71,6 +73,12 @@ export const ingestRouter = router({
     .output(ReextractOutput)
     .mutation(async ({ ctx, input }) => {
       return ctx.services.ingest.reextract(input);
+    }),
+  refresh: authedProcedure
+    .input(RefreshInput)
+    .output(RefreshOutput)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.services.ingest.refresh(input);
     }),
   delete: authedProcedure
     .input(DeleteInput)

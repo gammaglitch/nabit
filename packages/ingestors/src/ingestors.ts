@@ -310,6 +310,7 @@ function flattenHackerNewsComments(
 
 const tweetIngestor: Ingestor = {
   name: "tweet",
+  refetchable: false,
   matches(url) {
     return (
       /^(x|twitter)\.com$/i.test(url.hostname) &&
@@ -396,6 +397,7 @@ const tweetIngestor: Ingestor = {
 
 const redditIngestor: Ingestor = {
   name: "reddit",
+  refetchable: true,
   matches(url) {
     return (
       url.hostname === "reddit.com" && /\/r\/.+\/comments\//.test(url.pathname)
@@ -481,6 +483,7 @@ const redditIngestor: Ingestor = {
 
 const hackerNewsIngestor: Ingestor = {
   name: "hacker_news",
+  refetchable: true,
   matches(url) {
     return url.hostname === "news.ycombinator.com" && url.pathname === "/item";
   },

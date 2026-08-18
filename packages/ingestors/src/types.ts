@@ -71,4 +71,11 @@ export interface Ingestor {
   identify(input: IdentifyInput): ItemIdentity;
   matches(url: URL): boolean;
   name: IngestorName;
+  /**
+   * Whether `capture` can fetch the source itself, with nothing but the URL.
+   * False for ingestors that depend on a browser-side capturer handing them a
+   * payload (`tweet`), which is what stops a refresh from queueing a job that
+   * could only ever throw.
+   */
+  refetchable: boolean;
 }

@@ -123,10 +123,18 @@ const detailItem: MockItem = {
   title: "Filing the corners off my MacBooks",
 };
 
-const { useQueryMock, mutateDigestOptIn, mutateReextract } = vi.hoisted(() => ({
+const {
+  useQueryMock,
+  mutateDigestOptIn,
+  mutateReextract,
+  mutateRefresh,
+  jobQueryMock,
+} = vi.hoisted(() => ({
   useQueryMock: vi.fn(),
   mutateDigestOptIn: vi.fn().mockResolvedValue({ digestOptIn: true, id: 1 }),
   mutateReextract: vi.fn(),
+  mutateRefresh: vi.fn(),
+  jobQueryMock: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -144,6 +152,7 @@ vi.mock("@/lib/trpc/react", () => {
       useUtils: () => ({
         ingest: {
           get: { invalidate: vi.fn() },
+          jobs: { invalidate: vi.fn() },
           list: { invalidate: vi.fn() },
         },
         tags: { list: { invalidate: vi.fn() } },
@@ -166,6 +175,22 @@ vi.mock("@/lib/trpc/react", () => {
             mutateAsync: mutateReextract,
           }),
         },
+        job: {
+          useQuery: (...args: unknown[]) => jobQueryMock(...args),
+        },
+        refresh: {
+          useMutation: (options?: {
+            onSuccess?: (result: unknown) => unknown;
+          }) => ({
+            isPending: false,
+            mutate: vi.fn(),
+            mutateAsync: async (input: unknown) => {
+              const result = await mutateRefresh(input);
+              await options?.onSuccess?.(result);
+              return result;
+            },
+          }),
+        },
       },
       tags: {
         list: {
@@ -186,6 +211,14 @@ vi.mock("@/lib/trpc/react", () => {
 describe("ReaderPage", () => {
   beforeEach(() => {
     mutateDigestOptIn.mockClear();
+    jobQueryMock.mockReset();
+    jobQueryMock.mockReturnValue({ data: undefined, error: null });
+    mutateRefresh.mockReset();
+    mutateRefresh.mockResolvedValue({
+      itemId: 1,
+      job: { id: 77, status: "queued" },
+      reused: false,
+    });
     mutateReextract.mockReset();
     mutateReextract.mockResolvedValue({
       applied: true,
@@ -409,6 +442,74 @@ describe("ReaderPage", () => {
     expect(
       await screen.findByRole("button", { name: "Nothing extracted" }),
     ).toBeInTheDocument();
+  });
+
+  test("re-fetch targets the thread, not the article body on screen", async () => {
+    useQueryMock.mockReturnValue({
+      data: { item: detailItem },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-fetch" }));
+
+    // Comments are the reason to go back to a source and they belong to the
+    // thread (id 1), even though the body on screen is the linked article.
+    expect(mutateRefresh).toHaveBeenCalledWith({ id: 1 });
+    expect(
+      await screen.findByRole("button", { name: "Queued…" }),
+    ).toBeInTheDocument();
+  });
+
+  test("reports the capture landing once the queued job succeeds", async () => {
+    useQueryMock.mockReturnValue({
+      data: { item: detailItem },
+      error: null,
+      isLoading: false,
+    });
+    jobQueryMock.mockReturnValue({
+      data: { id: 77, status: "success" },
+      error: null,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-fetch" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Re-fetched" }),
+    ).toBeInTheDocument();
+  });
+
+  test("marks a comment the source has since deleted", () => {
+    useQueryMock.mockReturnValue({
+      data: {
+        item: {
+          ...detailItem,
+          comments: [
+            {
+              ...detailItem.comments[0],
+              metadata: {
+                points: 42,
+                removedFromSourceAt: "2026-08-18T12:00:00.000Z",
+              },
+            },
+          ],
+        },
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    // The archived body is still on screen; only its provenance changed.
+    expect(
+      screen.getByText("Top-level comment about the article."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("deleted at source")).toBeInTheDocument();
   });
 
   test("surfaces a failed request instead of looking like it worked", async () => {

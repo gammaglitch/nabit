@@ -87,6 +87,51 @@ describe("reextractSnapshots", () => {
     );
   });
 
+  test("prefers the capture with more comments when the post body is identical", async () => {
+    const thread = (comments: number) =>
+      JSON.stringify([
+        {
+          data: {
+            children: [
+              {
+                data: {
+                  author: "op",
+                  id: "abc123",
+                  selftext: "The self post, unchanged since we archived it.",
+                  title: "A thread",
+                },
+              },
+            ],
+          },
+        },
+        {
+          data: {
+            children: Array.from({ length: comments }, (_, index) => ({
+              data: {
+                author: "someone",
+                body: `reply ${index}`,
+                id: `c${index}`,
+              },
+              kind: "t1",
+            })),
+          },
+        },
+      ]);
+
+    const { preferred, preferredSnapshotId } = await reextractSnapshots({
+      ingestor: getIngestor("reddit"),
+      snapshots: [
+        { body: thread(2), contentType: "application/json", id: 20 },
+        // A later re-fetch of the same thread: same selftext, more replies.
+        { body: thread(9), contentType: "application/json", id: 21 },
+      ],
+      url: "https://reddit.com/r/rust/comments/abc123/a_thread",
+    });
+
+    expect(preferredSnapshotId).toBe(21);
+    expect(preferred?.comments).toHaveLength(9);
+  });
+
   test("reports failure rather than a winner when nothing extracts", async () => {
     const { preferred } = await reextractSnapshots({
       ingestor: getIngestor("generic"),

@@ -13,7 +13,10 @@ import {
 } from "../../db/schema";
 import type { AppEnv } from "../../lib/config/env";
 import type { AssetService } from "../assets/service";
+import type { CommentWrite } from "./comment-merge";
+import { planCommentMerge } from "./comment-merge";
 import type {
+  ExtractedComment,
   ExtractionAttempt,
   ExtractionStatus,
   Ingestor,
@@ -124,7 +127,18 @@ function preferExtraction(
   const currentLength = current.contentText?.length ?? 0;
   const candidateLength = candidate.contentText?.length ?? 0;
 
-  return candidateLength > currentLength ? candidate : current;
+  if (candidateLength !== currentLength) {
+    return candidateLength > currentLength ? candidate : current;
+  }
+
+  // Threads tie on body length constantly — a re-fetched reddit post has the
+  // same selftext it always had, and what actually changed is underneath it.
+  // Without this, a re-extract across an item's snapshots would keep picking
+  // the oldest capture and treat every comment fetched since as missing.
+  const currentComments = current.comments?.length ?? 0;
+  const candidateComments = candidate.comments?.length ?? 0;
+
+  return candidateComments > currentComments ? candidate : current;
 }
 
 type StoredSnapshot = {
@@ -229,6 +243,18 @@ function retryDelayMs(attempts: number) {
 // reaper can distinguish a slow-but-alive worker from a dead one. Reaper's
 // stale threshold must comfortably exceed this — see worker.ts defaults.
 const HEARTBEAT_MS = 30_000;
+
+// Comment writes are batched so a 500-comment thread is a couple of statements
+// rather than one enormous one (or five hundred small ones).
+const COMMENT_WRITE_CHUNK = 250;
+
+function chunked<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
 
 export class IngestService implements IngestServiceContract {
   constructor(
@@ -880,6 +906,64 @@ export class IngestService implements IngestServiceContract {
   }
 
   /**
+   * Queues a fresh capture of an item's source and folds it into the item we
+   * already have. Use when the source has moved on since it was archived — a
+   * reddit or HN thread that has grown comments since capture is the case this
+   * exists for.
+   *
+   * Queued rather than fetched inline for two reasons: the ingest worker is the
+   * process with the egress the scraped sites tolerate (see compose.vpn.yml —
+   * only the worker is tunneled), and a capture plus extraction is too slow to
+   * hold a request open for.
+   *
+   * The new bytes land as an additional snapshot, so the original capture stays
+   * readable, and comments merge rather than being replaced — see
+   * `syncComments`. The item's body, though, is whatever the fresh capture
+   * extracts, exactly as if the URL had been nabbed again.
+   */
+  async refresh(input: { id: number }) {
+    const db = requireDatabase(this.database);
+
+    const [item] = await db
+      .select({
+        id: itemsTable.id,
+        sourceUrl: itemsTable.sourceUrl,
+      })
+      .from(itemsTable)
+      .where(eq(itemsTable.id, input.id))
+      .limit(1);
+
+    if (!item) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `Item ${input.id} not found`,
+      });
+    }
+
+    if (!item.sourceUrl) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `Item ${input.id} has no source URL to re-fetch`,
+      });
+    }
+
+    const ingestorName = resolveIngestorName(item.sourceUrl, null);
+    if (!getIngestor(ingestorName).refetchable) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `The ${ingestorName} ingestor cannot fetch ${item.sourceUrl} on its own — it needs a capture from the browser`,
+      });
+    }
+
+    const { job, reused } = await this.enqueue({
+      ingestor: ingestorName,
+      url: item.sourceUrl,
+    });
+
+    return { itemId: item.id, job, reused };
+  }
+
+  /**
    * Re-runs extraction for an item against its archived snapshots. Use after
    * an extractor fix to bring an already-captured item up to date.
    *
@@ -1183,28 +1267,105 @@ export class IngestService implements IngestServiceContract {
       })
       .where(eq(itemsTable.id, input.itemId));
 
-    await db
-      .delete(commentsTable)
-      .where(eq(commentsTable.itemId, input.itemId));
+    await this.syncComments(db, input.itemId, input.extraction.comments ?? []);
+  }
 
-    if (!input.extraction.comments?.length) {
-      return;
+  /**
+   * Folds a capture's comments into whatever is already archived for the item.
+   *
+   * Deliberately additive: a re-fetch of a thread sees a re-sorted, paged,
+   * partly-deleted version of what we captured last time, so replacing the set
+   * would quietly destroy the archive (and every comment tag hanging off it).
+   * See `planCommentMerge` for the rules.
+   */
+  private async syncComments(
+    db: Database,
+    itemId: number,
+    incoming: ExtractedComment[],
+  ) {
+    if (incoming.length === 0) {
+      // Nothing was captured — an article extractor, or a thread capture that
+      // came back without a comment tree. Neither is evidence that the
+      // comments we already hold are gone.
+      return null;
     }
 
-    await db.insert(commentsTable).values(
-      input.extraction.comments.map((comment) => ({
-        author: comment.author ?? null,
-        contentMarkdown: comment.contentMarkdown ?? null,
-        contentText: comment.contentText,
-        externalId: comment.externalId ?? null,
-        itemId: input.itemId,
-        metadata: comment.metadata ?? {},
-        parentExternalId: comment.parentExternalId ?? null,
-        path: comment.path,
-        sourceCreatedAt: comment.sourceCreatedAt
-          ? new Date(comment.sourceCreatedAt)
-          : null,
+    const existing = await db
+      .select({
+        author: commentsTable.author,
+        contentMarkdown: commentsTable.contentMarkdown,
+        contentText: commentsTable.contentText,
+        externalId: commentsTable.externalId,
+        id: commentsTable.id,
+        metadata: commentsTable.metadata,
+        parentExternalId: commentsTable.parentExternalId,
+        path: commentsTable.path,
+        sourceCreatedAt: commentsTable.sourceCreatedAt,
+      })
+      .from(commentsTable)
+      .where(eq(commentsTable.itemId, itemId));
+
+    const { stats, writes } = planCommentMerge({
+      existing: existing.map((row) => ({
+        ...row,
+        metadata: (row.metadata ?? {}) as Record<string, unknown>,
       })),
-    );
+      incoming,
+      now: new Date(),
+    });
+
+    const toRow = (write: CommentWrite) => ({
+      author: write.author,
+      contentMarkdown: write.contentMarkdown,
+      contentText: write.contentText,
+      externalId: write.externalId,
+      itemId,
+      metadata: write.metadata,
+      parentExternalId: write.parentExternalId,
+      path: write.path,
+      sourceCreatedAt: write.sourceCreatedAt,
+    });
+
+    // Rows carrying an external id go through the (item_id, external_id)
+    // unique constraint, so one statement covers both the new comments and the
+    // ones we are updating in place — and an updated row keeps its id, which
+    // is what its tags reference.
+    const identified = writes.filter((write) => write.externalId !== null);
+    for (const chunk of chunked(identified, COMMENT_WRITE_CHUNK)) {
+      await db
+        .insert(commentsTable)
+        .values(chunk.map(toRow))
+        .onConflictDoUpdate({
+          set: {
+            author: sql`excluded.author`,
+            contentMarkdown: sql`excluded.content_markdown`,
+            contentText: sql`excluded.content_text`,
+            metadata: sql`excluded.metadata`,
+            parentExternalId: sql`excluded.parent_external_id`,
+            path: sql`excluded.path`,
+            sourceCreatedAt: sql`excluded.source_created_at`,
+          },
+          target: [commentsTable.itemId, commentsTable.externalId],
+        });
+    }
+
+    // Extractors that emit no external id (none today) are matched by path
+    // instead, which the unique constraint cannot express.
+    const anonymous = writes.filter((write) => write.externalId === null);
+    const fresh = anonymous.filter((write) => write.id === null);
+    for (const chunk of chunked(fresh, COMMENT_WRITE_CHUNK)) {
+      await db.insert(commentsTable).values(chunk.map(toRow));
+    }
+    for (const write of anonymous) {
+      if (write.id === null) {
+        continue;
+      }
+      await db
+        .update(commentsTable)
+        .set(toRow(write))
+        .where(eq(commentsTable.id, write.id));
+    }
+
+    return stats;
   }
 }
