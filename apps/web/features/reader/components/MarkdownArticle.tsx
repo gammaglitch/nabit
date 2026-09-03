@@ -253,23 +253,27 @@ const markdownComponents = {
   ),
 };
 
-export type MarkdownArticleProps = {
-  markdown: string;
-  /**
-   * Given an href from the markdown, an in-app URL to send the reader to
-   * instead, or null to leave the link pointing where the page pointed it.
-   *
-   * Only the site browser passes this. Everywhere else an archived link stays
-   * external, because "the archived copy of this URL" is only a question the
-   * crawl can answer — see features/sites/utils/archive-links.ts.
-   */
-  resolveInternalHref?: (href: string | undefined) => string | null;
-  /**
-   * Called instead of a full navigation when a resolved link is clicked
-   * normally. Lets the site browser swap panes rather than reload the app.
-   */
-  onFollowInternalHref?: (href: string) => void;
-};
+/**
+ * The two link props are a pair, and the type enforces it: the click handler
+ * calls preventDefault() before delegating, so a resolver without a follower
+ * would turn every matched link into a no-op.
+ *
+ * `resolveInternalHref` maps an href from the markdown to an in-app URL, or
+ * null to leave the link pointing where the page pointed it. `onFollow...` is
+ * called in place of a real navigation so the site browser can swap panes
+ * rather than reload the app.
+ *
+ * Only the site browser passes these. Everywhere else an archived link stays
+ * external, because "the archived copy of this URL" is only a question a crawl
+ * can answer — see features/sites/utils/archive-links.ts.
+ */
+export type MarkdownArticleProps = { markdown: string } & (
+  | {
+      resolveInternalHref: (href: string | undefined) => string | null;
+      onFollowInternalHref: (href: string) => void;
+    }
+  | { resolveInternalHref?: undefined; onFollowInternalHref?: undefined }
+);
 
 export function MarkdownArticle({
   markdown,
@@ -284,6 +288,11 @@ export function MarkdownArticle({
       a: ({ href, ...props }: ComponentPropsWithoutRef<"a">) => {
         const internal = resolveInternalHref(href);
         if (!internal) return <OutboundLink href={href} {...props} />;
+
+        // A cross-page `#anchor` is dropped by the resolver and lands at the
+        // top of the target page. Nothing to preserve it for yet: no rehype
+        // plugin assigns heading ids, so the fragment has no target on the
+        // destination either. Revisit together with heading anchors.
 
         return (
           <a

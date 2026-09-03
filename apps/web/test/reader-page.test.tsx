@@ -130,6 +130,8 @@ const {
   mutateDelete,
   routerPush,
   routerReplace,
+  invalidateGet,
+  resetGet,
 } = vi.hoisted(() => ({
   useQueryMock: vi.fn(),
   mutateDigestOptIn: vi.fn().mockResolvedValue({ digestOptIn: true, id: 1 }),
@@ -137,6 +139,8 @@ const {
   mutateDelete: vi.fn().mockResolvedValue({ deleted: true }),
   routerPush: vi.fn(),
   routerReplace: vi.fn(),
+  invalidateGet: vi.fn(),
+  resetGet: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -157,7 +161,7 @@ vi.mock("@/lib/trpc/react", () => {
           list: { invalidate: vi.fn() },
         },
         ingest: {
-          get: { invalidate: vi.fn() },
+          get: { invalidate: invalidateGet, reset: resetGet },
           list: { invalidate: vi.fn() },
         },
         tags: { list: { invalidate: vi.fn() } },
@@ -181,10 +185,23 @@ vi.mock("@/lib/trpc/react", () => {
           }),
         },
         delete: {
-          useMutation: () => ({
+          // Unlike the stubs above, this one runs the caller's onSuccess and
+          // awaits it, the way react-query does. That sequencing is the thing
+          // under test: what useDeleteItem touches in the cache, and whether
+          // the mutation can settle before it finishes.
+          useMutation: (options?: {
+            onSuccess?: (
+              data: unknown,
+              variables: { id: number },
+            ) => unknown | Promise<unknown>;
+          }) => ({
             isPending: false,
             mutate: vi.fn(),
-            mutateAsync: mutateDelete,
+            mutateAsync: async (variables: { id: number }) => {
+              const result = await mutateDelete(variables);
+              await options?.onSuccess?.(result, variables);
+              return result;
+            },
           }),
         },
       },
@@ -210,6 +227,8 @@ describe("ReaderPage", () => {
     mutateDelete.mockClear();
     routerPush.mockClear();
     routerReplace.mockClear();
+    invalidateGet.mockClear();
+    resetGet.mockClear();
     mutateReextract.mockReset();
     mutateReextract.mockResolvedValue({
       applied: true,
@@ -376,6 +395,14 @@ describe("ReaderPage", () => {
     expect(mutateDelete).not.toHaveBeenCalledWith({ id: 2 });
     // Staying on a deleted item would 404 on the next refetch.
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/items"));
+
+    // Dropping the dead cache entry is free; invalidating it would refetch the
+    // row that was just deleted, and the API throws for a missing id. With no
+    // retry defaults on the QueryClient that is three backed-off attempts, and
+    // react-query awaits onSuccess — so the delete would not settle, and the
+    // reader would sit on an error screen the whole time.
+    expect(resetGet).toHaveBeenCalledWith({ id: 1 });
+    expect(invalidateGet).not.toHaveBeenCalled();
   });
 
   test("an already-enrolled item offers to remove itself from the digest", () => {

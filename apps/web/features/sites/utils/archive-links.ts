@@ -97,5 +97,13 @@ export function resolveArchivedPage(
   if (!href) return null;
   const key = canonicalize(href, base);
   if (!key) return null;
+
+  // A link to the page already on screen resolves to nowhere new. A bare
+  // `#section` anchor is the common case: it resolves against `base` and then
+  // loses its hash, landing on this page's own key. Claiming those as internal
+  // links would swallow the click and navigate to the URL already in the bar,
+  // so they are left alone for the browser to deal with.
+  if (key === canonicalize(base)) return null;
+
   return index.get(key) ?? null;
 }

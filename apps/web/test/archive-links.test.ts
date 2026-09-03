@@ -124,6 +124,29 @@ describe("resolveArchivedPage", () => {
     ).toBe(2);
   });
 
+  test("leaves a bare fragment alone rather than claiming the current page", () => {
+    // `#install` resolves against the page being read and then loses its hash,
+    // landing on that page's own key — which is in the index. Claiming it would
+    // render an internal link whose click is swallowed and goes nowhere.
+    expect(resolveArchivedPage(index, "#install", base)).toBeNull();
+    expect(resolveArchivedPage(index, "#", base)).toBeNull();
+  });
+
+  test("leaves a link to the page being read alone", () => {
+    expect(resolveArchivedPage(index, base, base)).toBeNull();
+    expect(
+      resolveArchivedPage(
+        index,
+        "https://www.docs.site.com/guide/intro/",
+        base,
+      ),
+    ).toBeNull();
+  });
+
+  test("still resolves a fragment link that points at a different page", () => {
+    expect(resolveArchivedPage(index, "../reference/api#auth", base)).toBe(2);
+  });
+
   test("leaves a link to a page this crawl never archived alone", () => {
     expect(
       resolveArchivedPage(index, "https://elsewhere.com/post", base),
