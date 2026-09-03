@@ -206,6 +206,9 @@ const genericIngestor = {
     return {
       externalId: url,
       sourceType: "webpage",
+      // `extract` below promotes a page to `article` once it clears
+      // ARTICLE_MIN_WORDS, so a stored row for this URL may sit under either.
+      sourceTypeCandidates: ["webpage", "article"],
       sourceUrl: url,
     };
   },

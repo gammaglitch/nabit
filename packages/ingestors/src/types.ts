@@ -9,6 +9,23 @@ export type SnapshotArtifact = {
 export type ItemIdentity = {
   externalId: string;
   sourceType: string;
+  /**
+   * Every `source_type` this ingestor may store the item under, including
+   * `sourceType` itself. Defaults to just `sourceType`.
+   *
+   * An item is looked up by `(source_type, external_id)`, so an ingestor
+   * whose `identify` and `extract` can disagree needs to declare both: the
+   * generic ingestor calls a page `webpage` before it has read it, then
+   * reclassifies it to `article` once extraction finds enough prose. On a
+   * re-archive, matching on `webpage` alone misses the `article` row the
+   * first archive left behind, inserts a second row, and then collides on
+   * `uq_items_source_external` the moment extraction updates it.
+   *
+   * Widening the lookup to `external_id` alone would not be safe: ids are
+   * only unique per ingestor, and a tweet id and a Hacker News item id are
+   * both bare integers.
+   */
+  sourceTypeCandidates?: string[];
   sourceUrl: string;
 };
 

@@ -88,3 +88,73 @@ describe("generic ingestor", () => {
     );
   });
 });
+
+describe("generic ingestor identity", () => {
+  test("declares every source type extraction can reclassify a page to", async () => {
+    const generic = getIngestor("generic");
+    const url = "https://example.com/readable";
+
+    const identity = generic.identify({ snapshots: [], url });
+
+    // The bug this guards: `identify` returned only "webpage", so re-archiving
+    // a page that had already been promoted to "article" failed to match the
+    // existing row, inserted a second one, and violated
+    // uq_items_source_external as soon as extraction updated it.
+    const extraction = await generic.extract({
+      snapshot: {
+        body: `
+          <html lang="en">
+            <head><title>Readable Example</title></head>
+            <body>
+              <main>
+                <article>
+                  <h1>Readable Example</h1>
+                  <p>This article has enough prose to be detected by readability and it needs to contain
+                    plenty of words so that the generic extractor grades the extraction as a success
+                    rather than a partial result under the new word-count thresholds.</p>
+                  <p>It should come back as structured article content rather than a failed page shell,
+                    carrying author metadata, a title, and a body that reads like something you would
+                    actually want to archive and later read again inside your personal notes vault.</p>
+                  <p>
+                    Adding a third paragraph pushes the extracted text well past the success threshold
+                    and mirrors the kind of longer-form prose the generic ingestor is meant to archive
+                    in the MVP, with enough filler content to comfortably clear one hundred words of
+                    visible text after readability does its cleanup pass on the raw HTML input.
+                  </p>
+                </article>
+              </main>
+            </body>
+          </html>
+        `,
+        contentType: "text/html",
+      },
+      url,
+    });
+
+    expect(extraction.sourceType).toBe("article");
+    expect(identity.sourceTypeCandidates).toContain(identity.sourceType);
+    expect(identity.sourceTypeCandidates).toContain(
+      extraction.sourceType as string,
+    );
+  });
+
+  test("declares the source type of a page too short to be an article", async () => {
+    const generic = getIngestor("generic");
+    const url = "https://example.com/stub";
+
+    const identity = generic.identify({ snapshots: [], url });
+    const extraction = await generic.extract({
+      snapshot: {
+        body: `<html lang="en"><head><title>Stub</title></head>
+          <body><main><article><h1>Stub</h1><p>Too short.</p></article></main></body></html>`,
+        contentType: "text/html",
+      },
+      url,
+    });
+
+    expect(extraction.sourceType).toBe("webpage");
+    expect(identity.sourceTypeCandidates).toContain(
+      extraction.sourceType as string,
+    );
+  });
+});

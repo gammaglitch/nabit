@@ -1309,15 +1309,24 @@ export class IngestService implements IngestServiceContract {
       subjectItemId: number | null;
     },
   ) {
+    // See `ItemIdentity.sourceTypeCandidates`: an ingestor that reclassifies
+    // on extraction has to match every type it might have stored this item
+    // under, or a re-archive inserts a duplicate that collides on
+    // `uq_items_source_external`. Oldest row wins, so the row a previous
+    // archive built up is the one extended rather than a later stray.
+    const sourceTypes = identity.sourceTypeCandidates?.length
+      ? identity.sourceTypeCandidates
+      : [identity.sourceType];
     const existing = await db
       .select({ id: itemsTable.id })
       .from(itemsTable)
       .where(
         and(
-          eq(itemsTable.sourceType, identity.sourceType),
+          inArray(itemsTable.sourceType, sourceTypes),
           eq(itemsTable.externalId, identity.externalId),
         ),
       )
+      .orderBy(itemsTable.id)
       .limit(1);
 
     if (existing.length > 0) {
