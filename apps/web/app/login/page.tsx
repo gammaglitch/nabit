@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { Mark } from "@/features/shared/components/Mark";
 import {
+  NEXT_PARAM,
+  NEXT_STORAGE_KEY,
+  safeNextPath,
+} from "@/lib/auth/next-path";
+import {
   getBrowserSupabaseClient,
   getBrowserSupabaseRedirectUrl,
 } from "@/lib/supabase/client";
@@ -15,6 +20,19 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
+      // The provider round-trip cannot carry a query param of ours, so the
+      // destination waits here until /auth/callback comes back for it.
+      const next = safeNextPath(
+        new URLSearchParams(window.location.search).get(NEXT_PARAM),
+      );
+      try {
+        if (next) window.sessionStorage.setItem(NEXT_STORAGE_KEY, next);
+        else window.sessionStorage.removeItem(NEXT_STORAGE_KEY);
+      } catch {
+        // Private browsing modes throw on sessionStorage. Signing in still
+        // works; it just lands on the library rather than where you started.
+      }
+
       const supabase = getBrowserSupabaseClient();
       const { error: signInError } = await supabase.auth.signInWithOAuth({
         provider: "github",

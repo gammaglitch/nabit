@@ -4,7 +4,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Mark } from "@/features/shared/components/Mark";
+import { NEXT_STORAGE_KEY, safeNextPath } from "@/lib/auth/next-path";
 import { completeBrowserSupabaseAuth } from "@/lib/supabase/auth";
+
+/**
+ * The destination /login parked before handing off to the provider, read once
+ * and cleared so a later sign-in does not inherit it. Re-validated on the way
+ * out: it has been through storage since it was checked.
+ */
+function takeStoredNextPath(): string | null {
+  try {
+    const stored = window.sessionStorage.getItem(NEXT_STORAGE_KEY);
+    window.sessionStorage.removeItem(NEXT_STORAGE_KEY);
+    return safeNextPath(stored);
+  } catch {
+    return null;
+  }
+}
 
 type CallbackState =
   | { status: "loading" }
@@ -23,7 +39,7 @@ export default function AuthCallbackPage() {
         if (cancelled) return;
         setState({ status: "success" });
         window.history.replaceState({}, "", "/auth/callback");
-        router.replace("/");
+        router.replace(takeStoredNextPath() ?? "/");
       } catch (error) {
         if (!cancelled) {
           setState({

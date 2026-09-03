@@ -1,6 +1,12 @@
 "use client";
 
-import { type ComponentPropsWithoutRef, useMemo } from "react";
+import {
+  Children,
+  type ComponentPropsWithoutRef,
+  isValidElement,
+  type ReactNode,
+  useMemo,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getApiOrigin } from "@/lib/trpc/client";
@@ -13,24 +19,65 @@ function resolveAssetSrc(src: string | undefined) {
   return src;
 }
 
-function OutboundLink(props: ComponentPropsWithoutRef<"a">) {
+function OutboundLink({ href, ...props }: ComponentPropsWithoutRef<"a">) {
+  // A bare `#fragment` is not outbound — it points into the page already on
+  // screen. Opening it in a new tab reloads the whole app at a URL that differs
+  // only by its hash, which is never what a table of contents meant.
+  const sameDocument = typeof href === "string" && href.startsWith("#");
+
   return (
     <a
+      href={href}
       style={{
         color: "var(--accent)",
         textDecorationColor: "var(--accent)",
         textUnderlineOffset: 2,
       }}
-      target="_blank"
-      rel="noreferrer"
+      {...(sameDocument ? {} : { rel: "noreferrer", target: "_blank" })}
       {...props}
     />
   );
 }
 
+/**
+ * The id a heading's own permalink anchor points at, if it has one.
+ *
+ * Rentry, MkDocs, Sphinx and GitHub all render a heading with a small
+ * self-link beside it ("Permanent link", "¶"). Turndown keeps that as a link
+ * with no text, and it is the only surviving record of the id the page's own
+ * table of contents refers to: the visible heading text cannot be slugified
+ * back to it once there is an emoji in the way — `📝 ➜ Table of Contents` is
+ * `#table-of-contents`. A slugifying rehype plugin would miss for the same
+ * reason, which is why there isn't one.
+ *
+ * Only an empty link counts. A heading that merely contains a normal link
+ * ("See [the appendix](#appendix)") must not adopt that link's target as its
+ * own id.
+ */
+function permalinkId(children: ReactNode): string | undefined {
+  let id: string | undefined;
+
+  Children.forEach(children, (child) => {
+    if (id !== undefined || !isValidElement(child)) return;
+
+    const props = child.props as { children?: ReactNode; href?: unknown };
+    if (typeof props.href !== "string" || !props.href.startsWith("#")) return;
+
+    // "Empty" covers both the truly textless anchor and the ¶/🔗 glyph some
+    // renderers use, but never anything with words in it.
+    const text = Children.toArray(props.children).join("").trim();
+    if (text.length > 2 || /[\p{L}\p{N}]/u.test(text)) return;
+
+    id = props.href.slice(1);
+  });
+
+  return id;
+}
+
 const markdownComponents = {
-  h1: (props: ComponentPropsWithoutRef<"h1">) => (
+  h1: ({ children, ...props }: ComponentPropsWithoutRef<"h1">) => (
     <h1
+      id={permalinkId(children)}
       style={{
         fontFamily: "var(--read-font)",
         fontSize: 32,
@@ -41,10 +88,13 @@ const markdownComponents = {
         color: "var(--ink)",
       }}
       {...props}
-    />
+    >
+      {children}
+    </h1>
   ),
-  h2: (props: ComponentPropsWithoutRef<"h2">) => (
+  h2: ({ children, ...props }: ComponentPropsWithoutRef<"h2">) => (
     <h2
+      id={permalinkId(children)}
       style={{
         fontFamily: "var(--read-font)",
         fontSize: 24,
@@ -55,10 +105,13 @@ const markdownComponents = {
         color: "var(--ink)",
       }}
       {...props}
-    />
+    >
+      {children}
+    </h2>
   ),
-  h3: (props: ComponentPropsWithoutRef<"h3">) => (
+  h3: ({ children, ...props }: ComponentPropsWithoutRef<"h3">) => (
     <h3
+      id={permalinkId(children)}
       style={{
         fontFamily: "var(--read-font)",
         fontSize: 19,
@@ -68,10 +121,13 @@ const markdownComponents = {
         color: "var(--ink)",
       }}
       {...props}
-    />
+    >
+      {children}
+    </h3>
   ),
-  h4: (props: ComponentPropsWithoutRef<"h4">) => (
+  h4: ({ children, ...props }: ComponentPropsWithoutRef<"h4">) => (
     <h4
+      id={permalinkId(children)}
       style={{
         fontFamily: "var(--read-font)",
         fontSize: 17,
@@ -81,7 +137,9 @@ const markdownComponents = {
         color: "var(--ink)",
       }}
       {...props}
-    />
+    >
+      {children}
+    </h4>
   ),
   p: (props: ComponentPropsWithoutRef<"p">) => (
     <p

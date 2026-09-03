@@ -4,9 +4,14 @@ import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { useBrowserSupabaseSession } from "@/hooks/use-browser-supabase-session";
+import {
+  isPublicAuthPath,
+  loginPathWithNext,
+  NEXT_PARAM,
+  safeNextPath,
+  toNextPath,
+} from "@/lib/auth/next-path";
 import { authRequired } from "@/lib/auth/required";
-
-const PUBLIC_PATHS = ["/login", "/auth/callback"];
 
 export function AuthGate({ children }: { children: ReactNode }) {
   // When auth is disabled at build time, render children directly — no
@@ -25,21 +30,30 @@ function GateEnforced({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   const isPathReady = typeof pathname === "string" && pathname.length > 0;
-  const isPublicPath =
-    isPathReady &&
-    PUBLIC_PATHS.some((publicPath) => pathname.startsWith(publicPath));
+  const isPublicPath = isPathReady && isPublicAuthPath(pathname);
 
   useEffect(() => {
     if (!isPathReady || supabaseError || !supabaseClient) {
       return;
     }
 
+    // `window.location.search` rather than useSearchParams: this component
+    // wraps every route, and reading the hook here would opt the whole app out
+    // of static rendering. Inside an effect it is browser-only anyway.
     if (!session && !isPublicPath) {
-      router.replace("/login");
+      router.replace(
+        loginPathWithNext(toNextPath(pathname, window.location.search)),
+      );
     }
 
     if (session && pathname === "/login") {
-      router.replace("/");
+      // The other half of the proxy's bounce: it sends an expired-but-
+      // refreshable session here, and the client has the real one. Without
+      // this the destination is dropped on the way back out.
+      const next = safeNextPath(
+        new URLSearchParams(window.location.search).get(NEXT_PARAM),
+      );
+      router.replace(next ?? "/");
     }
   }, [
     isPathReady,
