@@ -104,6 +104,127 @@ export const rawSnapshotsTable = schema.table(
   (table) => [index("idx_raw_snapshots_item_id").on(table.itemId)],
 );
 
+// A crawl archives a site by walking its links, instead of archiving the one
+// URL it was handed: point it at a documentation index and it fans out to the
+// pages that index links to. The root page is an ordinary item; what makes the
+// result a browsable *site* rather than 200 loose rows is `crawl_pages`, which
+// records how the pages found each other.
+export const crawlsTable = schema.table(
+  "crawls",
+  (t) => ({
+    id: t.bigserial({ mode: "number" }).primaryKey(),
+    rootUrl: t.text("root_url").notNull(),
+    rootItemId: t
+      .bigint("root_item_id", { mode: "number" })
+      .references(() => itemsTable.id, { onDelete: "set null" }),
+    label: t.text("label"),
+    // 'host' keeps to the exact hostname; 'path' additionally requires the URL
+    // to sit under the root's directory. Registrable-domain scope (so that
+    // api.site.com counts as the same site) would need a public-suffix list,
+    // so it is deliberately not an option yet.
+    scope: t.text("scope").notNull().default("host"),
+    // Only meaningful for scope='path': the directory every in-scope URL must
+    // sit under, with its trailing slash. Stored rather than derived, because
+    // normalizeSourceUrl trims the trailing slash that is the only thing
+    // distinguishing the directory '/guide/' from the page '/guide'.
+    pathPrefix: t.text("path_prefix"),
+    // Off-scope links, when followed, are archived but never expanded — see
+    // classifyLink in modules/crawl/scope.ts. Without that rule, "follow
+    // external links" quietly means "crawl the open web".
+    followExternal: t.boolean("follow_external").notNull().default(false),
+    includePattern: t.text("include_pattern"),
+    excludePattern: t.text("exclude_pattern"),
+    maxDepth: t.integer("max_depth").notNull().default(3),
+    maxPages: t.integer("max_pages").notNull().default(200),
+    status: t.text("status").notNull().default("queued"),
+    errorMessage: t.text("error_message"),
+    // Denormalized counters. The authoritative numbers are always a count over
+    // crawl_pages; these exist so the list view can render progress for every
+    // crawl without a per-crawl aggregate.
+    pagesDone: t.integer("pages_done").notNull().default(0),
+    pagesFailed: t.integer("pages_failed").notNull().default(0),
+    pagesQueued: t.integer("pages_queued").notNull().default(0),
+    createdAt: t
+      .timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: t
+      .timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: t.timestamp("finished_at", { withTimezone: true }),
+  }),
+  (table) => [
+    index("idx_crawls_status").on(table.status),
+    index("idx_crawls_created_at").on(table.createdAt),
+    index("idx_crawls_root_item_id").on(table.rootItemId),
+    check("crawls_scope_check", sql`${table.scope} in ('host', 'path')`),
+    check(
+      "crawls_status_check",
+      sql`${table.status} in ('queued', 'running', 'paused', 'done', 'failed', 'cancelled')`,
+    ),
+  ],
+);
+
+// The frontier, the visited set, and the page tree, in one table.
+//
+// `unique(crawl_id, url)` is what makes it the visited set: expansion inserts
+// with ON CONFLICT DO NOTHING, so a page linked from twenty siblings is
+// fetched once. `parent_page_id` + `discovery_index` reconstruct the tree in
+// the order the source linked things, which is what the site browser renders —
+// for a table-of-contents page that is the author's own ordering.
+export const crawlPagesTable = schema.table(
+  "crawl_pages",
+  (t) => ({
+    id: t.bigserial({ mode: "number" }).primaryKey(),
+    crawlId: t
+      .bigint("crawl_id", { mode: "number" })
+      .notNull()
+      .references(() => crawlsTable.id, { onDelete: "cascade" }),
+    // Null until the page has actually been ingested, and again if the item is
+    // later deleted — the row stays so the tree keeps its shape.
+    itemId: t
+      .bigint("item_id", { mode: "number" })
+      .references(() => itemsTable.id, { onDelete: "set null" }),
+    url: t.text("url").notNull(),
+    depth: t.integer("depth").notNull().default(0),
+    parentPageId: t.bigint("parent_page_id", { mode: "number" }),
+    discoveryIndex: t.integer("discovery_index").notNull().default(0),
+    isRoot: t.boolean("is_root").notNull().default(false),
+    // Archived, but its own links are never harvested: off-scope pages reached
+    // because followExternal is on, and in-scope pages that landed on maxDepth.
+    isLeaf: t.boolean("is_leaf").notNull().default(false),
+    isExternal: t.boolean("is_external").notNull().default(false),
+    status: t.text("status").notNull().default("queued"),
+    errorMessage: t.text("error_message"),
+    // Denormalized so the tree renders without joining every item.
+    title: t.text("title"),
+    createdAt: t
+      .timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: t
+      .timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }),
+  (table) => [
+    unique("uq_crawl_pages_crawl_url").on(table.crawlId, table.url),
+    index("idx_crawl_pages_crawl_status").on(table.crawlId, table.status),
+    index("idx_crawl_pages_item_id").on(table.itemId),
+    index("idx_crawl_pages_parent_page_id").on(table.parentPageId),
+    foreignKey({
+      columns: [table.parentPageId],
+      foreignColumns: [table.id],
+      name: "fk_crawl_pages_parent_page_id",
+    }).onDelete("set null"),
+    check(
+      "crawl_pages_status_check",
+      sql`${table.status} in ('queued', 'running', 'done', 'failed', 'skipped')`,
+    ),
+  ],
+);
+
 export const ingestJobsTable = schema.table(
   "ingest_jobs",
   (t) => ({
@@ -116,6 +237,16 @@ export const ingestJobsTable = schema.table(
     // ensureItem applies it on insert only. Defaults false so the headless
     // ingest paths (REST, extension, Discord bot, userscript) never enroll.
     digestOptIn: t.boolean("digest_opt_in").notNull().default(false),
+    // Set only for jobs a crawl queued. Their presence is what tells
+    // processNextJob to hand the page's outbound links to CrawlService.expand
+    // once the ingest lands; an ordinary ingest has both null and expands
+    // nothing.
+    crawlId: t
+      .bigint("crawl_id", { mode: "number" })
+      .references(() => crawlsTable.id, { onDelete: "cascade" }),
+    crawlPageId: t
+      .bigint("crawl_page_id", { mode: "number" })
+      .references(() => crawlPagesTable.id, { onDelete: "cascade" }),
     itemId: t
       .bigint("item_id", { mode: "number" })
       .references(() => itemsTable.id, { onDelete: "set null" }),
@@ -143,6 +274,7 @@ export const ingestJobsTable = schema.table(
     index("idx_ingest_jobs_status_run_after").on(table.status, table.runAfter),
     index("idx_ingest_jobs_created_at").on(table.createdAt),
     index("idx_ingest_jobs_item_id").on(table.itemId),
+    index("idx_ingest_jobs_crawl_id").on(table.crawlId),
     check(
       "ingest_jobs_status_check",
       sql`${table.status} in ('queued', 'processing', 'success', 'failed')`,

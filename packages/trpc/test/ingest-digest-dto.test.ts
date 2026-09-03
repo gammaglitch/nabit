@@ -35,9 +35,10 @@ describe("@repo/trpc digest opt-in DTOs", () => {
   });
 
   test("the toggle requires both an item id and an explicit state", () => {
-    expect(
-      SetDigestOptInInput.parse({ digestOptIn: false, id: 7 }),
-    ).toEqual({ digestOptIn: false, id: 7 });
+    expect(SetDigestOptInInput.parse({ digestOptIn: false, id: 7 })).toEqual({
+      digestOptIn: false,
+      id: 7,
+    });
 
     // No implicit toggle: the caller states the state it wants, so a retry or
     // a double-click cannot flip the item back.

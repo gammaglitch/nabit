@@ -27,6 +27,8 @@ Auth accepts either a Supabase JWT or the static `API_TOKEN` env var (used by th
 7. **Pick the best extraction.** `preferExtraction()` ranks `success > partial > failed` and breaks ties by `contentText.length`. The winner is applied via `applyExtraction()`, which writes `author/title/contentText/metadata/sourceCreatedAt` onto the item, then **deletes and re-inserts** all comments for that item from the extraction.
 8. **Return** `{ created, itemId, normalizedUrl, ingestor, sourceType, status, snapshotId, extractionId }`.
 
+When the job that triggered this carries a `crawl_id`, step 8 is preceded by handing the page's outbound links to the crawler — see [`crawl.md`](/docs/features/crawl.md). Ordinary ingests have no `crawl_id` and expand nothing.
+
 ## Ingestors
 
 All ingestors live in `apps/api/src/modules/ingest/ingestors.ts`.
@@ -58,6 +60,7 @@ All ingestors live in `apps/api/src/modules/ingest/ingestors.ts`.
 - `fetch()` the page, then if `env.headlessBrowser.enabled` and the HTML looks JS-rendered (`needsBrowserCapture`), capture a second rendered snapshot via the headless browser and append it as a separate snapshot.
 - Extracts via JSDOM + Mozilla Readability. Status: `success` if extracted text ≥200 chars, `partial` if shorter, `failed` if Readability returned nothing.
 - Metadata: `excerpt`, `siteName`, `language`, `wordCount`, `contentType`.
+- Also emits `outboundLinks`: every link on the page, harvested from the full document **before** Readability runs, and present even on `failed` extractions. Only crawls read it — see [`crawl.md`](/docs/features/crawl.md) for why it cannot come from Readability's output.
 
 ## Storage
 
@@ -68,10 +71,11 @@ Defined in `apps/api/src/db/schema.ts`:
 - `extractionsTable` — one row per extraction attempt, linked to a snapshot. Failed attempts have `itemId = null`.
 - `commentsTable` — flattened comment tree with materialized paths.
 - `itemTagsTable` / `tagsTable` — tagging, managed via the `tags` tRPC router.
+- `crawlsTable` / `crawlPagesTable` — site crawls. Not part of this pipeline; see [`crawl.md`](/docs/features/crawl.md).
 
 ## Read / delete
 
-`ingest.list` supports `search` (full-text via `searchVector @@ plainto_tsquery`), `sourceType`, and `tagIds` (item must have *all* requested tags). It loads every matching row — there is currently no `limit` / `offset`. `ingest.get` returns one item with its snapshots, extractions, comments, and tags. `ingest.delete` removes by id (cascades via FK).
+`ingest.list` supports `search` (full-text via `searchVector @@ plainto_tsquery`), `sourceType`, and `tagIds` (item must have *all* requested tags). Sub-pages collected by a crawl are excluded unless `includeCrawledPages` is set, and the crawl **root** carries a `crawl` summary so the library can render it as a site. It loads every matching row — there is currently no `limit` / `offset`. `ingest.get` returns one item with its snapshots, extractions, comments, and tags. `ingest.delete` removes by id (cascades via FK).
 
 ## Linked items (HN / Reddit → article)
 

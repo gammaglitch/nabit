@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/features/shared/components/Icon";
 import { useStarred } from "@/features/shared/hooks/useStarred";
 import { trpc } from "@/lib/trpc/react";
+import { StartCrawlModal } from "@/features/sites/components/StartCrawlModal";
+import { useCrawlList } from "@/features/sites/hooks/useCrawls";
 import { CaptureModal } from "../components/CaptureModal";
 import { CompactRow } from "../components/CompactRow";
 import { LibrarySidebar } from "../components/LibrarySidebar";
@@ -40,6 +42,8 @@ export default function ItemsPage() {
   const [layout, setLayout] = useState<Layout>("list");
   const [collapsed, setCollapsed] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
+  // Set when the capture palette hands its URL over to the crawler.
+  const [crawlSeedUrl, setCrawlSeedUrl] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [tagPicker, setTagPicker] = useState<{
     itemId: number;
@@ -109,6 +113,12 @@ export default function ItemsPage() {
   );
 
   const allTagsObjects = tagsQuery.data?.tags ?? [];
+
+  // Counted from the crawls themselves rather than from rawItems: that list is
+  // search-filtered, so typing anything that misses the crawl roots would drop
+  // the count to zero, and a crawl whose root has not been ingested yet has no
+  // item to count at all.
+  const sitesCount = useCrawlList().data?.crawls.length ?? 0;
 
   const displayItems = useMemo(
     () => primaryItems.map(toDisplayItem),
@@ -270,6 +280,8 @@ export default function ItemsPage() {
         activeTag={activeTag}
         setActiveTag={setActiveTag}
         allTags={sidebarTagList}
+        sitesCount={sitesCount}
+        onOpenSites={() => router.push("/sites")}
       />
 
       <main
@@ -645,7 +657,22 @@ export default function ItemsPage() {
         />
       )}
 
-      <CaptureModal open={captureOpen} onOpenChange={setCaptureOpen} />
+      <CaptureModal
+        open={captureOpen}
+        onOpenChange={setCaptureOpen}
+        onCrawl={(url) => setCrawlSeedUrl(url)}
+      />
+
+      {crawlSeedUrl !== null && (
+        <StartCrawlModal
+          initialUrl={crawlSeedUrl}
+          onOpenChange={(next) => {
+            if (!next) setCrawlSeedUrl(null);
+          }}
+          onStarted={(crawlId) => router.push(`/sites/${crawlId}`)}
+          open
+        />
+      )}
 
       <QueueStatus
         hidden={captureOpen}
