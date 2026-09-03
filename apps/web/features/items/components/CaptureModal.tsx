@@ -14,6 +14,8 @@ import { trpc } from "@/lib/trpc/react";
 type CaptureModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Hands the typed URL to the crawler instead of nabbing the single page. */
+  onCrawl?: (url: string) => void;
 };
 
 function detectType(u: string): NormalizedSource | null {
@@ -29,7 +31,11 @@ function looksLikeUrl(q: string): boolean {
   return /^https?:\/\/\S+$/.test(q.trim());
 }
 
-export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
+export function CaptureModal({
+  open,
+  onOpenChange,
+  onCrawl,
+}: CaptureModalProps) {
   const utils = trpc.useUtils();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"idle" | "error" | "queued">("idle");
@@ -272,6 +278,37 @@ export function CaptureModal({ open, onOpenChange }: CaptureModalProps) {
                       }}
                     >
                       ↵
+                    </span>
+                  </CommandPrimitive.Item>
+                )}
+                {canNab && onCrawl && (
+                  <CommandPrimitive.Item
+                    value="crawl"
+                    onSelect={() => {
+                      onOpenChange(false);
+                      onCrawl(trimmed);
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 20px",
+                      borderLeft: "2px solid transparent",
+                      fontFamily: "var(--mono-font)",
+                      fontSize: 12,
+                      color: "var(--ink)",
+                      cursor: "pointer",
+                    }}
+                    className="data-[selected=true]:bg-[var(--bg-alt)] data-[selected=true]:border-l-[var(--accent)]"
+                  >
+                    <span style={{ color: "var(--accent)", fontWeight: 700 }}>
+                      ▤
+                    </span>
+                    <span style={{ flex: 1 }}>
+                      Crawl the whole site{" "}
+                      <span style={{ color: "var(--ink-2)" }}>
+                        every page this one links to
+                      </span>
                     </span>
                   </CommandPrimitive.Item>
                 )}

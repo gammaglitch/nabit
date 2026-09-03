@@ -29,6 +29,8 @@ type SidebarProps = {
   activeTag: string | null;
   setActiveTag: (t: string | null) => void;
   allTags: Array<{ name: string; count: number }>;
+  sitesCount: number;
+  onOpenSites: () => void;
 };
 
 export function LibrarySidebar(props: SidebarProps) {
@@ -62,6 +64,8 @@ function ExpandedSidebar({
   setActiveTag,
   allTags,
   onToggleCollapse,
+  sitesCount,
+  onOpenSites,
 }: SidebarProps) {
   return (
     <>
@@ -138,6 +142,14 @@ function ExpandedSidebar({
             onClick={() => setActiveFolder(n.id)}
           />
         ))}
+        {/* Navigates to the crawler rather than filtering the list, so it is
+            never the active row. */}
+        <NavRow
+          label="Sites"
+          count={sitesCount}
+          active={false}
+          onClick={onOpenSites}
+        />
       </div>
 
       <div

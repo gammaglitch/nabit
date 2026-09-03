@@ -143,6 +143,36 @@ export default function ReaderPage({ id }: { id: number }) {
         >
           ← Hoard
         </button>
+        {/* A crawled page is not reachable from the library — the list shows
+            one row for the whole site — so this is its only way back. */}
+        {raw.crawl && (
+          <button
+            type="button"
+            onClick={() =>
+              router.push(`/sites/${raw.crawl?.id}?page=${raw.crawl?.pageId}`)
+            }
+            title={`Part of ${raw.crawl.label ?? "an archived site"}`}
+            style={{
+              fontFamily: "var(--mono-font)",
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--ink-2)",
+              border: "1px solid var(--rule)",
+              padding: "5px 10px",
+              background: "transparent",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              maxWidth: 220,
+              overflow: "hidden",
+              whiteSpace: "nowrap",
+              textOverflow: "ellipsis",
+            }}
+          >
+            ⌂ {raw.crawl.label ?? "Site"}
+          </button>
+        )}
         <div
           style={{
             fontFamily: "var(--mono-font)",
