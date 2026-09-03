@@ -9,8 +9,8 @@ import { hostname } from "@/features/shared/utils/source";
 import { trpc } from "@/lib/trpc/react";
 import { CrawlProgress } from "../components/CrawlProgress";
 import { SiteTree } from "../components/SiteTree";
-import { StatusBadge } from "./SitesPage";
 import { useCrawl, useCrawls } from "../hooks/useCrawls";
+import { buildArchiveIndex, resolveArchivedPage } from "../utils/archive-links";
 import {
   buildSiteTree,
   type CrawlPage,
@@ -18,6 +18,7 @@ import {
   isReadable,
   pageLabel,
 } from "../utils/tree";
+import { StatusBadge } from "./SitesPage";
 
 export default function SiteBrowserPage({ id }: { id: number }) {
   const router = useRouter();
@@ -109,6 +110,27 @@ export default function SiteBrowserPage({ id }: { id: number }) {
   const detailQuery = trpc.ingest.get.useQuery(
     { id: selectedPage?.itemId ?? 0 },
     { enabled: selectedPage?.itemId != null },
+  );
+
+  // A link in archived prose that points at a page this crawl also archived
+  // should stay inside the archive. The stored markdown is left untouched —
+  // see utils/archive-links.ts for why the rewrite happens here and not on
+  // ingest — so anything the crawl did not reach still goes to the live web.
+  const archiveIndex = useMemo(() => buildArchiveIndex(pages), [pages]);
+  const selectedUrl = selectedPage?.url ?? null;
+  const resolveInternalHref = useCallback(
+    (href: string | undefined) => {
+      if (!selectedUrl) return null;
+      const pageId = resolveArchivedPage(archiveIndex, href, selectedUrl);
+      return pageId === null ? null : `/sites/${id}?page=${pageId}`;
+    },
+    [archiveIndex, id, selectedUrl],
+  );
+  const followInternalHref = useCallback(
+    (href: string) => {
+      router.replace(href, { scroll: true });
+    },
+    [router],
   );
 
   if (!Number.isFinite(id) || id <= 0) {
@@ -287,7 +309,11 @@ export default function SiteBrowserPage({ id }: { id: number }) {
               <div style={{ marginTop: 28 }}>
                 {detailQuery.isLoading && <Muted>Loading page…</Muted>}
                 {!detailQuery.isLoading && markdown.trim().length > 0 && (
-                  <MarkdownArticle markdown={markdown} />
+                  <MarkdownArticle
+                    markdown={markdown}
+                    onFollowInternalHref={followInternalHref}
+                    resolveInternalHref={resolveInternalHref}
+                  />
                 )}
                 {!detailQuery.isLoading && markdown.trim().length === 0 && (
                   <Muted>
