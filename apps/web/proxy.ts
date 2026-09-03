@@ -1,22 +1,20 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import {
+  isPublicAuthPath,
+  NEXT_PARAM,
+  safeNextPath,
+  toNextPath,
+} from "@/lib/auth/next-path";
+import {
   AUTH_COOKIE_NAME,
   hasUsableAccessToken,
 } from "@/lib/supabase/auth-cookie";
-
-const PUBLIC_PATH_PREFIXES = ["/login", "/auth/callback"];
 
 // Mirror of <@/lib/auth/required.ts>. Duplicated because the edge proxy
 // runs before any of the React tree, so it can't import a "use client"
 // helper. `NEXT_PUBLIC_AUTH_REQUIRED` is inlined here at build time.
 const AUTH_REQUIRED = process.env.NEXT_PUBLIC_AUTH_REQUIRED !== "false";
-
-function isPublicPath(pathname: string) {
-  return PUBLIC_PATH_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
-}
 
 export function proxy(request: NextRequest) {
   // Single-user / self-hosted mode: no gate at any layer.
@@ -28,14 +26,20 @@ export function proxy(request: NextRequest) {
   const accessToken = request.cookies.get(AUTH_COOKIE_NAME)?.value ?? null;
   const hasSession = hasUsableAccessToken(accessToken);
 
-  if (!isPublicPath(pathname) && !hasSession) {
+  if (!isPublicAuthPath(pathname) && !hasSession) {
     const loginUrl = new URL("/login", request.url);
+    // Carry the destination through the bounce. An access token that has
+    // expired but is still refreshable looks like no session here, so this
+    // fires on a perfectly ordinary deep link — following one used to land on
+    // /items with no sign anything had been redirected.
+    const next = toNextPath(pathname, request.nextUrl.search);
+    if (next) loginUrl.searchParams.set(NEXT_PARAM, next);
     return NextResponse.redirect(loginUrl);
   }
 
   if (pathname === "/login" && hasSession) {
-    const itemsUrl = new URL("/items", request.url);
-    return NextResponse.redirect(itemsUrl);
+    const next = safeNextPath(request.nextUrl.searchParams.get(NEXT_PARAM));
+    return NextResponse.redirect(new URL(next ?? "/items", request.url));
   }
 
   return NextResponse.next();
