@@ -820,66 +820,66 @@ export class IngestService implements IngestServiceContract {
       tagRows,
       crawlRows,
     ] = await Promise.all([
-        db
-          .select({
-            count: sql<number>`count(*)`,
-            itemId: rawSnapshotsTable.itemId,
-          })
-          .from(rawSnapshotsTable)
-          .where(inArray(rawSnapshotsTable.itemId, itemIds))
-          .groupBy(rawSnapshotsTable.itemId),
-        db
-          .select({
-            count: sql<number>`count(*)`,
-            itemId: commentsTable.itemId,
-          })
-          .from(commentsTable)
-          .where(inArray(commentsTable.itemId, itemIds))
-          .groupBy(commentsTable.itemId),
-        db
-          .select({
-            extractedAt: extractionsTable.extractedAt,
-            itemId: extractionsTable.itemId,
-            status: extractionsTable.status,
-          })
-          .from(extractionsTable)
-          .where(inArray(extractionsTable.itemId, itemIds))
-          .orderBy(desc(extractionsTable.extractedAt)),
-        db
-          .select({ count: sql<number>`count(*)` })
-          .from(itemsTable)
-          .where(whereClause),
-        db
-          .select({
-            itemId: itemTagsTable.itemId,
-            tagId: tagsTable.id,
-            tagName: tagsTable.name,
-          })
-          .from(itemTagsTable)
-          .innerJoin(tagsTable, eq(itemTagsTable.tagId, tagsTable.id))
-          .where(inArray(itemTagsTable.itemId, itemIds)),
-        // Root pages only — every other crawl page was filtered out above.
-        // This is what turns one library row into "a site of N pages" rather
-        // than a lone index page.
-        db
-          .select({
-            id: crawlsTable.id,
-            itemId: crawlPagesTable.itemId,
-            label: crawlsTable.label,
-            pageId: crawlPagesTable.id,
-            pagesDone: crawlsTable.pagesDone,
-            pagesQueued: crawlsTable.pagesQueued,
-            status: crawlsTable.status,
-          })
-          .from(crawlPagesTable)
-          .innerJoin(crawlsTable, eq(crawlsTable.id, crawlPagesTable.crawlId))
-          .where(
-            and(
-              inArray(crawlPagesTable.itemId, itemIds),
-              eq(crawlPagesTable.isRoot, true),
-            ),
+      db
+        .select({
+          count: sql<number>`count(*)`,
+          itemId: rawSnapshotsTable.itemId,
+        })
+        .from(rawSnapshotsTable)
+        .where(inArray(rawSnapshotsTable.itemId, itemIds))
+        .groupBy(rawSnapshotsTable.itemId),
+      db
+        .select({
+          count: sql<number>`count(*)`,
+          itemId: commentsTable.itemId,
+        })
+        .from(commentsTable)
+        .where(inArray(commentsTable.itemId, itemIds))
+        .groupBy(commentsTable.itemId),
+      db
+        .select({
+          extractedAt: extractionsTable.extractedAt,
+          itemId: extractionsTable.itemId,
+          status: extractionsTable.status,
+        })
+        .from(extractionsTable)
+        .where(inArray(extractionsTable.itemId, itemIds))
+        .orderBy(desc(extractionsTable.extractedAt)),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(itemsTable)
+        .where(whereClause),
+      db
+        .select({
+          itemId: itemTagsTable.itemId,
+          tagId: tagsTable.id,
+          tagName: tagsTable.name,
+        })
+        .from(itemTagsTable)
+        .innerJoin(tagsTable, eq(itemTagsTable.tagId, tagsTable.id))
+        .where(inArray(itemTagsTable.itemId, itemIds)),
+      // Root pages only — every other crawl page was filtered out above.
+      // This is what turns one library row into "a site of N pages" rather
+      // than a lone index page.
+      db
+        .select({
+          id: crawlsTable.id,
+          itemId: crawlPagesTable.itemId,
+          label: crawlsTable.label,
+          pageId: crawlPagesTable.id,
+          pagesDone: crawlsTable.pagesDone,
+          pagesQueued: crawlsTable.pagesQueued,
+          status: crawlsTable.status,
+        })
+        .from(crawlPagesTable)
+        .innerJoin(crawlsTable, eq(crawlsTable.id, crawlPagesTable.crawlId))
+        .where(
+          and(
+            inArray(crawlPagesTable.itemId, itemIds),
+            eq(crawlPagesTable.isRoot, true),
           ),
-      ]);
+        ),
+    ]);
 
     const snapshotCountByItem = new Map(
       countRows.map((row) => [row.itemId, Number(row.count)]),

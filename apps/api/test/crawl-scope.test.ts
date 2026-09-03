@@ -5,10 +5,7 @@ import {
   resolvePathPrefix,
 } from "../src/modules/crawl/scope";
 
-function classifier(
-  rootUrl: string,
-  overrides: Partial<CrawlScope> = {},
-) {
+function classifier(rootUrl: string, overrides: Partial<CrawlScope> = {}) {
   return createLinkClassifier({
     rootUrl,
     scope: {

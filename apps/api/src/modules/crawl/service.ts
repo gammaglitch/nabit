@@ -9,11 +9,11 @@ import {
 } from "../../db/schema";
 import { normalizeSourceUrl, resolveIngestorName } from "../ingest/ingestors";
 import type { CrawlExpansion, IngestService } from "../ingest/service";
+import { planExpansion, selectCandidates } from "./expansion";
 import { isPathAllowed, RobotsCache } from "./robots";
 import {
   type CrawlScopeMode,
   createLinkClassifier,
-  type LinkVerdict,
   resolvePathPrefix,
 } from "./scope";
 
@@ -235,9 +235,15 @@ export class CrawlService {
 
     // A cancelled or failed crawl still records the page that was already in
     // flight, but must not grow any further.
-    const stillRunning = crawl.status === "running" || crawl.status === "queued";
+    const stillRunning =
+      crawl.status === "running" || crawl.status === "queued";
     if (stillRunning && !page.isLeaf && input.outboundLinks.length > 0) {
-      await this.queueDiscoveredLinks({ crawl, db, page, links: input.outboundLinks });
+      await this.queueDiscoveredLinks({
+        crawl,
+        db,
+        page,
+        links: input.outboundLinks,
+      });
     }
 
     await this.refreshProgress(db, crawl.id);
@@ -270,20 +276,15 @@ export class CrawlService {
   }) {
     const { crawl, db, links, page } = input;
 
-    const classify = createLinkClassifier({
-      rootUrl: crawl.rootUrl,
-      scope: scopeOf(crawl),
+    const candidates = selectCandidates({
+      classify: createLinkClassifier({
+        rootUrl: crawl.rootUrl,
+        scope: scopeOf(crawl),
+      }),
+      links,
+      parentDepth: page.depth,
     });
-
-    // Dedupe within the page first: a nav block repeated in a header and a
-    // footer would otherwise contend on the unique index for every link.
-    const candidates = new Map<string, LinkVerdict & { follow: "expand" | "leaf" }>();
-    for (const link of links) {
-      const verdict = classify(link, page.depth);
-      if (verdict.follow === "skip") continue;
-      if (!candidates.has(verdict.url)) candidates.set(verdict.url, verdict);
-    }
-    if (candidates.size === 0) return;
+    if (candidates.length === 0) return;
 
     const [{ counted }] = (await db.execute(sql`
       select count(*)::int as counted
@@ -292,61 +293,36 @@ export class CrawlService {
         and status <> 'skipped'
     `)) as unknown as Array<{ counted: number }>;
 
-    let budget = Math.max(0, crawl.maxPages - counted);
-    const rows: Array<typeof crawlPagesTable.$inferInsert> = [];
-    let discoveryIndex = 0;
-
-    for (const verdict of candidates.values()) {
-      // robots.txt is consulted before the row is written, so a disallowed URL
-      // is recorded as skipped rather than queued and then quietly dropped.
-      const rules = await this.robots.rulesFor(verdict.url);
-      const parsed = new URL(verdict.url);
-      const allowed = isPathAllowed(rules, `${parsed.pathname}${parsed.search}`);
-
-      if (!allowed) {
-        rows.push({
-          crawlId: crawl.id,
-          depth: verdict.depth,
-          discoveryIndex: discoveryIndex++,
-          errorMessage: "Disallowed by robots.txt",
-          isExternal: verdict.external,
-          isLeaf: verdict.follow === "leaf",
-          parentPageId: page.id,
-          status: "skipped",
-          url: verdict.url,
-        });
-        continue;
-      }
-
-      if (budget <= 0) {
-        // Out of page budget. Recorded rather than dropped so the site view
-        // can say the crawl hit its cap instead of looking mysteriously short.
-        rows.push({
-          crawlId: crawl.id,
-          depth: verdict.depth,
-          discoveryIndex: discoveryIndex++,
-          errorMessage: `Crawl page limit of ${crawl.maxPages} reached`,
-          isExternal: verdict.external,
-          isLeaf: verdict.follow === "leaf",
-          parentPageId: page.id,
-          status: "skipped",
-          url: verdict.url,
-        });
-        continue;
-      }
-
-      budget -= 1;
-      rows.push({
-        crawlId: crawl.id,
-        depth: verdict.depth,
-        discoveryIndex: discoveryIndex++,
-        isExternal: verdict.external,
-        isLeaf: verdict.follow === "leaf",
-        parentPageId: page.id,
-        status: "queued",
-        url: verdict.url,
-      });
+    // robots.txt is resolved up front, so the planner stays synchronous and
+    // a disallowed URL is recorded as skipped rather than queued and then
+    // quietly dropped. Rules are cached per origin, so this is one fetch per
+    // host however many candidates share it.
+    const robotsAllows = new Map<string, boolean>();
+    for (const candidate of candidates) {
+      const rules = await this.robots.rulesFor(candidate.url);
+      const parsed = new URL(candidate.url);
+      robotsAllows.set(
+        candidate.url,
+        isPathAllowed(rules, `${parsed.pathname}${parsed.search}`),
+      );
     }
+
+    const rows = planExpansion({
+      candidates,
+      isAllowedByRobots: (url) => robotsAllows.get(url) ?? true,
+      maxPages: crawl.maxPages,
+      pagesUsed: counted,
+    }).map((row) => ({
+      crawlId: crawl.id,
+      depth: row.depth,
+      discoveryIndex: row.discoveryIndex,
+      errorMessage: row.errorMessage,
+      isExternal: row.isExternal,
+      isLeaf: row.isLeaf,
+      parentPageId: page.id,
+      status: row.status,
+      url: row.url,
+    }));
 
     // Only genuinely new rows come back, so a page reached from twenty
     // siblings is queued once — the unique index on (crawl_id, url) is the

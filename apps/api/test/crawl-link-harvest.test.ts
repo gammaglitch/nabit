@@ -91,7 +91,9 @@ describe("outbound link harvesting", () => {
     `);
 
     expect(extraction.status).toBe("success");
-    expect(extraction.outboundLinks).toContain("https://docs.site.com/guide/next");
+    expect(extraction.outboundLinks).toContain(
+      "https://docs.site.com/guide/next",
+    );
   });
 
   test("a non-html capture has no links to offer", async () => {

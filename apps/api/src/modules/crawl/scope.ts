@@ -39,10 +39,49 @@ export type LinkVerdict =
 // generic extractor already short-circuits non-text/html captures to `failed`,
 // so fetching these would spend page budget to store a guaranteed failure.
 const NON_DOCUMENT_EXTENSIONS = new Set([
-  "7z", "avi", "bmp", "bz2", "css", "csv", "dmg", "doc", "docx", "eot", "epub",
-  "exe", "gif", "gz", "ico", "jpeg", "jpg", "js", "json", "mp3", "mp4", "mov",
-  "odt", "ogg", "pdf", "png", "ppt", "pptx", "rar", "rss", "svg", "tar", "tgz",
-  "ttf", "wav", "webm", "webp", "woff", "woff2", "xls", "xlsx", "xml", "zip",
+  "7z",
+  "avi",
+  "bmp",
+  "bz2",
+  "css",
+  "csv",
+  "dmg",
+  "doc",
+  "docx",
+  "eot",
+  "epub",
+  "exe",
+  "gif",
+  "gz",
+  "ico",
+  "jpeg",
+  "jpg",
+  "js",
+  "json",
+  "mp3",
+  "mp4",
+  "mov",
+  "odt",
+  "ogg",
+  "pdf",
+  "png",
+  "ppt",
+  "pptx",
+  "rar",
+  "rss",
+  "svg",
+  "tar",
+  "tgz",
+  "ttf",
+  "wav",
+  "webm",
+  "webp",
+  "woff",
+  "woff2",
+  "xls",
+  "xlsx",
+  "xml",
+  "zip",
 ]);
 
 const FOLLOWABLE_PROTOCOLS = new Set(["http:", "https:"]);
@@ -118,7 +157,10 @@ export function createLinkClassifier(input: {
     return candidate.pathname.startsWith(prefix);
   }
 
-  return function classifyLink(rawUrl: string, parentDepth: number): LinkVerdict {
+  return function classifyLink(
+    rawUrl: string,
+    parentDepth: number,
+  ): LinkVerdict {
     let normalized: string;
     let candidate: URL;
     try {

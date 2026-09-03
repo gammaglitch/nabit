@@ -92,7 +92,10 @@ describe("isPathAllowed", () => {
   });
 
   test("matches against the query string too", () => {
-    const rules = parseRobots("User-agent: *\nDisallow: /*?replytocom", "nabit");
+    const rules = parseRobots(
+      "User-agent: *\nDisallow: /*?replytocom",
+      "nabit",
+    );
 
     expect(isPathAllowed(rules, "/post?replytocom=12")).toBe(false);
     expect(isPathAllowed(rules, "/post")).toBe(true);
