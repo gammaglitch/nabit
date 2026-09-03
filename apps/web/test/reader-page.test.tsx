@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import ReaderPage from "@/features/reader/screens/ReaderPage";
 
@@ -123,14 +123,24 @@ const detailItem: MockItem = {
   title: "Filing the corners off my MacBooks",
 };
 
-const { useQueryMock, mutateDigestOptIn, mutateReextract } = vi.hoisted(() => ({
+const {
+  useQueryMock,
+  mutateDigestOptIn,
+  mutateReextract,
+  mutateDelete,
+  routerPush,
+  routerReplace,
+} = vi.hoisted(() => ({
   useQueryMock: vi.fn(),
   mutateDigestOptIn: vi.fn().mockResolvedValue({ digestOptIn: true, id: 1 }),
   mutateReextract: vi.fn(),
+  mutateDelete: vi.fn().mockResolvedValue({ deleted: true }),
+  routerPush: vi.fn(),
+  routerReplace: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ replace: routerReplace, push: routerPush }),
 }));
 
 vi.mock("@/lib/trpc/react", () => {
@@ -142,6 +152,10 @@ vi.mock("@/lib/trpc/react", () => {
   return {
     trpc: {
       useUtils: () => ({
+        crawl: {
+          get: { invalidate: vi.fn() },
+          list: { invalidate: vi.fn() },
+        },
         ingest: {
           get: { invalidate: vi.fn() },
           list: { invalidate: vi.fn() },
@@ -166,6 +180,13 @@ vi.mock("@/lib/trpc/react", () => {
             mutateAsync: mutateReextract,
           }),
         },
+        delete: {
+          useMutation: () => ({
+            isPending: false,
+            mutate: vi.fn(),
+            mutateAsync: mutateDelete,
+          }),
+        },
       },
       tags: {
         list: {
@@ -186,6 +207,9 @@ vi.mock("@/lib/trpc/react", () => {
 describe("ReaderPage", () => {
   beforeEach(() => {
     mutateDigestOptIn.mockClear();
+    mutateDelete.mockClear();
+    routerPush.mockClear();
+    routerReplace.mockClear();
     mutateReextract.mockReset();
     mutateReextract.mockResolvedValue({
       applied: true,
@@ -329,6 +353,29 @@ describe("ReaderPage", () => {
       digestOptIn: true,
       id: 1,
     });
+  });
+
+  test("deleting needs a confirm, then removes the item and leaves the reader", async () => {
+    useQueryMock.mockReturnValue({
+      data: { item: detailItem },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+    expect(mutateDelete).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /delete for good/i }));
+
+    // Item 1 is the thread being read. Item 2 is the article it links to,
+    // which is the body on screen and what re-extract targets — but it is its
+    // own item, and deleting the thread must not take it along.
+    await waitFor(() => expect(mutateDelete).toHaveBeenCalledWith({ id: 1 }));
+    expect(mutateDelete).not.toHaveBeenCalledWith({ id: 2 });
+    // Staying on a deleted item would 404 on the next refetch.
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/items"));
   });
 
   test("an already-enrolled item offers to remove itself from the digest", () => {
