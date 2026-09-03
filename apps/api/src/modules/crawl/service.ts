@@ -286,6 +286,31 @@ export class CrawlService {
     });
     if (candidates.length === 0) return;
 
+    // Drop candidates this crawl already has a row for, before any budget is
+    // spent on them. They would insert nothing (ON CONFLICT DO NOTHING) but
+    // still consume budget, so on a site with a nav block repeated across
+    // every page the budget is eaten by URLs already archived — and the
+    // genuinely new pages behind them get written off permanently as
+    // "limit reached" when the cap was never really hit.
+    const known = new Set(
+      (
+        await db
+          .select({ url: crawlPagesTable.url })
+          .from(crawlPagesTable)
+          .where(
+            and(
+              eq(crawlPagesTable.crawlId, crawl.id),
+              inArray(
+                crawlPagesTable.url,
+                candidates.map((candidate) => candidate.url),
+              ),
+            ),
+          )
+      ).map((row) => row.url),
+    );
+    const fresh = candidates.filter((candidate) => !known.has(candidate.url));
+    if (fresh.length === 0) return;
+
     const [{ counted }] = (await db.execute(sql`
       select count(*)::int as counted
       from ${crawlPagesTable}
@@ -298,7 +323,7 @@ export class CrawlService {
     // quietly dropped. Rules are cached per origin, so this is one fetch per
     // host however many candidates share it.
     const robotsAllows = new Map<string, boolean>();
-    for (const candidate of candidates) {
+    for (const candidate of fresh) {
       const rules = await this.robots.rulesFor(candidate.url);
       const parsed = new URL(candidate.url);
       robotsAllows.set(
@@ -308,7 +333,7 @@ export class CrawlService {
     }
 
     const rows = planExpansion({
-      candidates,
+      candidates: fresh,
       isAllowedByRobots: (url) => robotsAllows.get(url) ?? true,
       maxPages: crawl.maxPages,
       pagesUsed: counted,
@@ -338,8 +363,24 @@ export class CrawlService {
     const toFetch = inserted.filter((row) => row.status === "queued");
     if (toFetch.length === 0) return;
 
-    // Space the new jobs out, continuing from whatever this crawl already has
-    // queued so successive expansions don't all schedule themselves at "now".
+    await this.scheduleFetches(db, crawl, toFetch);
+  }
+
+  /**
+   * Queue an ingest job per page, spaced out.
+   *
+   * The cursor continues from whatever this crawl already has queued, so
+   * successive expansions don't all schedule themselves at "now" and the
+   * per-host delay actually holds across the whole crawl rather than within
+   * one batch. Every path that queues crawl work goes through here — a
+   * recovery path that skipped it would fire a whole backlog at the host at
+   * once, which is precisely what the robots handling exists to avoid.
+   */
+  private async scheduleFetches(
+    db: Database,
+    crawl: Pick<CrawlRow, "id">,
+    pages: Array<{ id: number; url: string }>,
+  ) {
     const [{ queuedUntil }] = (await db.execute(sql`
       select coalesce(max(run_after), now()) as "queuedUntil"
       from ${ingestJobsTable}
@@ -348,8 +389,8 @@ export class CrawlService {
     `)) as unknown as Array<{ queuedUntil: string | Date }>;
 
     let cursor = Math.max(new Date(queuedUntil).getTime(), Date.now());
-    for (const row of toFetch) {
-      const rules = await this.robots.rulesFor(row.url);
+    for (const page of pages) {
+      const rules = await this.robots.rulesFor(page.url);
       const delay = Math.max(
         rules.crawlDelayMs ?? DEFAULT_CRAWL_DELAY_MS,
         DEFAULT_CRAWL_DELAY_MS,
@@ -357,9 +398,9 @@ export class CrawlService {
       cursor += delay;
       await this.ingest.enqueue({
         crawlId: crawl.id,
-        crawlPageId: row.id,
+        crawlPageId: page.id,
         runAfter: new Date(cursor),
-        url: row.url,
+        url: page.url,
       });
     }
   }
@@ -537,10 +578,19 @@ export class CrawlService {
   /**
    * Close out crawls the worker cannot finish on its own.
    *
-   * Two failure modes: a page marked `queued` whose job vanished (the process
-   * died between inserting the row and enqueueing it), and a crawl whose last
-   * page settled while the expander was failing. Runs on the worker's reap
-   * tick, alongside the ingest job reaper.
+   * Runs on the worker's reap tick, alongside the ingest job reaper, and
+   * handles two distinct cases that both leave a page sitting at `queued`:
+   *
+   * - **Never enqueued.** The process died between inserting the row and
+   *   queueing its job, so no job exists at all. Genuinely lost work; requeue.
+   * - **Job already gave up.** The job exists and is `failed` — it exhausted
+   *   its retries, or the reaper timed it out. The page must be marked
+   *   `failed`, *not* requeued.
+   *
+   * Telling those apart is what stops a page that reliably kills the worker
+   * from being retried forever: `enqueue` inserts a **new** job row with
+   * `attempts` back at zero, so requeueing a permanently-failed page resets
+   * the retry cap on every tick and the crawl never settles.
    */
   async sweep() {
     const db = requireDatabase(this.database);
@@ -550,46 +600,74 @@ export class CrawlService {
       .where(inArray(crawlsTable.status, ["queued", "running"]));
 
     let requeued = 0;
+    let failed = 0;
     let finished = 0;
 
     for (const crawl of running) {
+      // Backstop for a page whose failure hook threw: the job has given up,
+      // so the page has too.
+      const reconciled = (await db.execute(sql`
+        update ${crawlPagesTable} p
+        set status = 'failed',
+            error_message = coalesce(
+              (
+                select j.error_message
+                from ${ingestJobsTable} j
+                where j.crawl_page_id = p.id and j.status = 'failed'
+                order by j.id desc
+                limit 1
+              ),
+              'Ingest job failed'
+            ),
+            updated_at = now()
+        where p.crawl_id = ${crawl.id}
+          and p.status = 'queued'
+          and exists (
+            select 1 from ${ingestJobsTable} j
+            where j.crawl_page_id = p.id and j.status = 'failed'
+          )
+          and not exists (
+            select 1 from ${ingestJobsTable} j
+            where j.crawl_page_id = p.id
+              and j.status in ('queued', 'processing')
+          )
+        returning p.id
+      `)) as unknown as Array<{ id: number }>;
+      failed += reconciled.length;
+
+      // A page with no job row whatsoever — the only safe thing to requeue.
       const orphans = (await db.execute(sql`
         select p.id, p.url
         from ${crawlPagesTable} p
         where p.crawl_id = ${crawl.id}
           and p.status = 'queued'
           and not exists (
-            select 1
-            from ${ingestJobsTable} j
+            select 1 from ${ingestJobsTable} j
             where j.crawl_page_id = p.id
-              and j.status in ('queued', 'processing')
           )
+        order by p.id
       `)) as unknown as Array<{ id: number; url: string }>;
 
-      for (const orphan of orphans) {
-        await this.ingest.enqueue({
-          crawlId: crawl.id,
-          crawlPageId: orphan.id,
-          url: orphan.url,
-        });
-        requeued += 1;
+      if (orphans.length > 0) {
+        // Spaced like any other batch. Firing every recovered page at `now`
+        // would undo the politeness the rest of the crawl observes.
+        await this.scheduleFetches(db, crawl, orphans);
+        requeued += orphans.length;
       }
 
-      if (orphans.length === 0) {
-        const before = crawl.status;
-        await this.refreshProgress(db, crawl.id);
-        const [after] = await db
-          .select({ status: crawlsTable.status })
-          .from(crawlsTable)
-          .where(eq(crawlsTable.id, crawl.id))
-          .limit(1);
-        if (after && after.status === "done" && before !== "done") {
-          finished += 1;
-        }
+      const before = crawl.status;
+      await this.refreshProgress(db, crawl.id);
+      const [after] = await db
+        .select({ status: crawlsTable.status })
+        .from(crawlsTable)
+        .where(eq(crawlsTable.id, crawl.id))
+        .limit(1);
+      if (after && after.status === "done" && before !== "done") {
+        finished += 1;
       }
     }
 
-    return { finished, requeued };
+    return { failed, finished, requeued };
   }
 
   private async requireCrawl(db: Database, id: number) {

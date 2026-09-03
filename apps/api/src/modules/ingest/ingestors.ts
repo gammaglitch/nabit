@@ -141,13 +141,30 @@ const MAX_OUTBOUND_LINKS = 2000;
  *
  * Uses `anchor.href` rather than resolving getAttribute("href") by hand so
  * that a document's own `<base href>` is honoured.
+ *
+ * Fragments are dropped before deduplicating. They address a position on the
+ * page, not another page, so `#install` and `#config` are one URL to a crawl —
+ * and counting them separately would let a long reference page's own
+ * in-page contents list fill the cap and crowd out its real links, on exactly
+ * the kind of index page this exists to walk.
  */
 function harvestOutboundLinks(document: Document): string[] {
   const seen = new Set<string>();
   for (const anchor of document.querySelectorAll("a[href]")) {
     const href = (anchor as HTMLAnchorElement).href?.trim();
     if (!href) continue;
-    seen.add(href);
+
+    let deduped = href;
+    try {
+      const url = new URL(href);
+      url.hash = "";
+      deduped = url.toString();
+    } catch {
+      // Not a URL the platform can parse (`javascript:` and friends). Keep it
+      // as-is; the crawl's own classifier rejects it by protocol.
+    }
+
+    seen.add(deduped);
     if (seen.size >= MAX_OUTBOUND_LINKS) break;
   }
   return [...seen];

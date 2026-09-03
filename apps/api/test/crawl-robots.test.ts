@@ -49,6 +49,38 @@ describe("parseRobots", () => {
     expect(isPathAllowed(rules, "/anything")).toBe(true);
   });
 
+  test("a stray empty User-agent does not discard the wildcard rules", () => {
+    // An empty token matches everyone, so treating it as a named group made us
+    // adopt an empty rule set and ignore the Disallow the site actually wrote.
+    const rules = parseRobots(
+      `User-agent:
+       Disallow: /nothing/
+
+       User-agent: *
+       Disallow: /admin/`,
+      "nabit",
+    );
+
+    expect(rules.disallow).toEqual(["/admin/"]);
+    expect(isPathAllowed(rules, "/admin/secret")).toBe(false);
+  });
+
+  test("matches our token by prefix, not by substring", () => {
+    // "abi" appears inside "nabit"; a substring test would hand us a group
+    // written for an unrelated crawler.
+    const rules = parseRobots(
+      `User-agent: abi
+       Disallow: /
+
+       User-agent: *
+       Disallow: /admin/`,
+      "nabit",
+    );
+
+    expect(rules.disallow).toEqual(["/admin/"]);
+    expect(isPathAllowed(rules, "/guide/intro")).toBe(true);
+  });
+
   test("ignores comments and unknown directives", () => {
     const rules = parseRobots(
       `# a comment

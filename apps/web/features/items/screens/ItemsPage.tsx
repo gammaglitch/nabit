@@ -6,6 +6,7 @@ import { Icon } from "@/features/shared/components/Icon";
 import { useStarred } from "@/features/shared/hooks/useStarred";
 import { trpc } from "@/lib/trpc/react";
 import { StartCrawlModal } from "@/features/sites/components/StartCrawlModal";
+import { useCrawlList } from "@/features/sites/hooks/useCrawls";
 import { CaptureModal } from "../components/CaptureModal";
 import { CompactRow } from "../components/CompactRow";
 import { LibrarySidebar } from "../components/LibrarySidebar";
@@ -113,12 +114,11 @@ export default function ItemsPage() {
 
   const allTagsObjects = tagsQuery.data?.tags ?? [];
 
-  // Crawl roots are the only crawl pages the list returns, so counting them
-  // counts the archived sites.
-  const sitesCount = useMemo(
-    () => rawItems.filter((item) => item.crawl !== null).length,
-    [rawItems],
-  );
+  // Counted from the crawls themselves rather than from rawItems: that list is
+  // search-filtered, so typing anything that misses the crawl roots would drop
+  // the count to zero, and a crawl whose root has not been ingested yet has no
+  // item to count at all.
+  const sitesCount = useCrawlList().data?.crawls.length ?? 0;
 
   const displayItems = useMemo(
     () => primaryItems.map(toDisplayItem),

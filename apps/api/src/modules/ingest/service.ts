@@ -574,7 +574,31 @@ export class IngestService implements IngestServiceContract {
           sql`${ingestJobsTable.attempts} >= ${ingestJobsTable.maxAttempts}`,
         ),
       )
-      .returning({ id: ingestJobsTable.id });
+      .returning({
+        crawlId: ingestJobsTable.crawlId,
+        crawlPageId: ingestJobsTable.crawlPageId,
+        id: ingestJobsTable.id,
+      });
+
+    // A reaped job is the other way a crawl page dies, and the only one that
+    // does not pass through processNextJob's catch. Without this the page
+    // stays `queued` with no job behind it: pagesQueued never drops, pending
+    // never reaches zero, and the crawl sits in `running` forever.
+    for (const row of failedRows) {
+      if (row.crawlId === null || row.crawlPageId === null) continue;
+      try {
+        await this.crawlHooks?.onPageFailed({
+          crawlId: row.crawlId,
+          crawlPageId: row.crawlPageId,
+          errorMessage: "Worker timed out",
+        });
+      } catch (error) {
+        // The reaper's job is to unstick the queue; one crawl's bookkeeping
+        // failing must not stop it reaping the rest. CrawlService.sweep()
+        // reconciles a page left behind here on a later tick.
+        console.error(error, "crawl failure hook failed during reap");
+      }
+    }
 
     const requeuedRows = await db
       .update(ingestJobsTable)

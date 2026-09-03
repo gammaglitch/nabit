@@ -96,6 +96,24 @@ describe("outbound link harvesting", () => {
     );
   });
 
+  test("collapses in-page anchors to the page itself", async () => {
+    // A long reference page's own contents list is all fragments. Counting
+    // them separately let them fill the 2000-link cap and crowd out the real
+    // links, on exactly the kind of index page a crawl exists to walk.
+    const extraction = await extract(`
+      <html><body>
+        <a href="#install">Install</a>
+        <a href="#config">Config</a>
+        <a href="/guide/next">Next</a>
+      </body></html>
+    `);
+
+    expect(extraction.outboundLinks).toEqual([
+      "https://docs.site.com/guide/",
+      "https://docs.site.com/guide/next",
+    ]);
+  });
+
   test("a non-html capture has no links to offer", async () => {
     const extraction = await generic.extract({
       snapshot: { body: "%PDF-1.4", contentType: "application/pdf" },

@@ -21,6 +21,23 @@ function looksLikeUrl(value: string) {
   return /^https?:\/\/\S+$/.test(value.trim());
 }
 
+// Mirrors the bounds in StartCrawlInput. A number input reports an empty or
+// unparseable field as "", and Number("") is 0 — which is a *valid* depth, so
+// clearing the box to retype would otherwise submit a one-page crawl of just
+// the root rather than failing visibly.
+const DEPTH_RANGE = { max: 10, min: 0 } as const;
+const PAGES_RANGE = { max: 5000, min: 1 } as const;
+
+function parseBounded(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.trunc(value) : null;
+}
+
+function inRange(value: number | null, range: { max: number; min: number }) {
+  return value !== null && value >= range.min && value <= range.max;
+}
+
 const labelStyle = {
   color: "var(--ink-3)",
   display: "block",
@@ -52,8 +69,8 @@ export function StartCrawlModal({
   const [url, setUrl] = useState("");
   const [scope, setScope] = useState<"host" | "path">("host");
   const [followExternal, setFollowExternal] = useState(false);
-  const [maxDepth, setMaxDepth] = useState(3);
-  const [maxPages, setMaxPages] = useState(200);
+  const [maxDepth, setMaxDepth] = useState<number | null>(3);
+  const [maxPages, setMaxPages] = useState<number | null>(200);
   const [excludePattern, setExcludePattern] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -69,7 +86,11 @@ export function StartCrawlModal({
   }, [open, initialUrl]);
 
   const trimmed = url.trim();
-  const canStart = looksLikeUrl(trimmed) && !isStarting;
+  const canStart =
+    looksLikeUrl(trimmed) &&
+    inRange(maxDepth, DEPTH_RANGE) &&
+    inRange(maxPages, PAGES_RANGE) &&
+    !isStarting;
 
   const submit = async () => {
     if (!canStart) return;
@@ -78,8 +99,8 @@ export function StartCrawlModal({
       const result = await startCrawl({
         excludePattern: excludePattern.trim() || null,
         followExternal,
-        maxDepth,
-        maxPages,
+        maxDepth: maxDepth as number,
+        maxPages: maxPages as number,
         scope,
         url: trimmed,
       });
@@ -212,10 +233,12 @@ export function StartCrawlModal({
                 id="crawl-depth"
                 max={10}
                 min={0}
-                onChange={(event) => setMaxDepth(Number(event.target.value))}
+                onChange={(event) =>
+                  setMaxDepth(parseBounded(event.target.value))
+                }
                 style={inputStyle}
                 type="number"
-                value={maxDepth}
+                value={maxDepth ?? ""}
               />
             </div>
             <div style={{ flex: 1 }}>
@@ -227,10 +250,12 @@ export function StartCrawlModal({
                 id="crawl-pages"
                 max={5000}
                 min={1}
-                onChange={(event) => setMaxPages(Number(event.target.value))}
+                onChange={(event) =>
+                  setMaxPages(parseBounded(event.target.value))
+                }
                 style={inputStyle}
                 type="number"
-                value={maxPages}
+                value={maxPages ?? ""}
               />
             </div>
           </div>

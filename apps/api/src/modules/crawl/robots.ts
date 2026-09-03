@@ -54,15 +54,22 @@ export function parseRobots(text: string, userAgent: string): RobotsRules {
         currentAgents = [];
         inHeader = true;
       }
-      currentAgents.push(value.toLowerCase());
+      // A bare `User-agent:` is meaningless, and must not be recorded: an
+      // empty token matches every crawler, which would make us adopt an empty
+      // "named" group and discard the `*` rules the site actually wrote.
+      if (value) currentAgents.push(value.toLowerCase());
       continue;
     }
 
     inHeader = false;
     const targets: RobotsRules[] = [];
+    const ourAgent = userAgent.toLowerCase();
     for (const agent of currentAgents) {
       if (agent === "*") targets.push(wildcard);
-      else if (userAgent.toLowerCase().includes(agent)) {
+      // Prefix match on the product token, per the standard. A substring test
+      // would also match a group naming some unrelated agent that happens to
+      // appear inside ours.
+      else if (ourAgent.startsWith(agent)) {
         targets.push(named);
         matchedNamed = true;
       }

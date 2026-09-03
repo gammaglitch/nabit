@@ -35,6 +35,7 @@ vi.mock("@/lib/trpc/react", () => {
       crawl: {
         cancel: { useMutation: mutationStub },
         delete: { useMutation: mutationStub },
+        list: { useQuery: () => ({ data: { crawls: [] }, isLoading: false }) },
         start: { useMutation: mutationStub },
       },
       ingest: {
