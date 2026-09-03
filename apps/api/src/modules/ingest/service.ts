@@ -1,9 +1,11 @@
 import type { TrpcServices } from "@repo/trpc";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, inArray, lt, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from "drizzle-orm";
 import type { DatabaseState } from "../../db/client";
 import {
   commentsTable,
+  crawlPagesTable,
+  crawlsTable,
   extractionsTable,
   ingestJobsTable,
   itemsTable,
@@ -44,10 +46,51 @@ type IngestResult = {
   subjectItemId: number | null;
 };
 
+// Everything a crawl needs to fan out from a page it just archived.
+export type CrawlExpansion = {
+  crawlId: number;
+  crawlPageId: number;
+  itemId: number;
+  outboundLinks: string[];
+  title: string | null;
+};
+
+// Registered via setCrawlHooks, so IngestService stays unaware of crawl
+// internals while CrawlService keeps depending on this one for its enqueueing.
+export type CrawlHooks = {
+  onPageIngested: (input: CrawlExpansion) => Promise<void>;
+  onPageFailed: (input: {
+    crawlId: number;
+    crawlPageId: number;
+    errorMessage: string;
+  }) => Promise<void>;
+};
+
+// Carries two things the public result has no use for: the page's outbound
+// links, and its title. Both exist only to feed a crawl, and both are stripped
+// by toPublicResult before anything is stored or returned — a few hundred URLs
+// per row would bloat `ingest_jobs.result`, and the IngestOutput DTO would drop
+// them on the way out anyway.
+type InternalIngestResult = Omit<IngestResult, "sourceItem"> & {
+  outboundLinks: string[];
+  sourceItem: InternalIngestResult | null;
+  title: string | null;
+};
+
+function toPublicResult(result: InternalIngestResult): IngestResult {
+  const { outboundLinks: _links, title: _title, ...rest } = result;
+  return {
+    ...rest,
+    sourceItem: result.sourceItem ? toPublicResult(result.sourceItem) : null,
+  };
+}
+
 type IngestJobRow = typeof ingestJobsTable.$inferSelect;
 
 type ClaimedIngestJob = {
   attempts: number;
+  crawlId: number | null;
+  crawlPageId: number | null;
   digestOptIn: boolean;
   id: number;
   ingestor: string | null;
@@ -231,6 +274,8 @@ function retryDelayMs(attempts: number) {
 const HEARTBEAT_MS = 30_000;
 
 export class IngestService implements IngestServiceContract {
+  private crawlHooks: CrawlHooks | null = null;
+
   constructor(
     private readonly database: DatabaseState,
     private readonly env: AppEnv,
@@ -243,13 +288,29 @@ export class IngestService implements IngestServiceContract {
     payload?: unknown;
     url: string;
   }): Promise<IngestResult> {
-    return this.ingestInternal({ ...input, skipLinkedUrls: false });
+    return toPublicResult(
+      await this.ingestInternal({ ...input, skipLinkedUrls: false }),
+    );
+  }
+
+  /**
+   * Register what a crawl should do when one of its pages lands or gives up.
+   *
+   * Wired from lib/services.ts rather than injected, because CrawlService
+   * depends on this service for its enqueueing — taking it in the constructor
+   * would make the pair impossible to build.
+   */
+  setCrawlHooks(hooks: CrawlHooks) {
+    this.crawlHooks = hooks;
   }
 
   async enqueue(input: {
+    crawlId?: number | null;
+    crawlPageId?: number | null;
     digestOptIn?: boolean;
     ingestor?: IngestorName | null;
     payload?: unknown;
+    runAfter?: Date;
     url: string;
   }) {
     const db = requireDatabase(this.database);
@@ -267,6 +328,11 @@ export class IngestService implements IngestServiceContract {
     // Note this also means a second enqueue for the same URL keeps the first
     // job's `digestOptIn`. Re-nabbing with the box ticked won't enroll an
     // already-queued item; use setDigestOptIn once it lands.
+    //
+    // Crawl jobs dedup within their own crawl only. Two crawls that overlap
+    // would otherwise share one job, and only the crawl that happened to own
+    // it would ever get the page's links back — the other would silently stop
+    // fanning out. Re-fetching the shared page is the cheaper mistake.
     const [existing] = await db
       .select()
       .from(ingestJobsTable)
@@ -274,6 +340,9 @@ export class IngestService implements IngestServiceContract {
         and(
           eq(ingestJobsTable.url, requestedUrl),
           inArray(ingestJobsTable.status, ["queued", "processing"]),
+          input.crawlId == null
+            ? isNull(ingestJobsTable.crawlId)
+            : eq(ingestJobsTable.crawlId, input.crawlId),
         ),
       )
       .orderBy(desc(ingestJobsTable.createdAt))
@@ -286,9 +355,14 @@ export class IngestService implements IngestServiceContract {
     const [job] = await db
       .insert(ingestJobsTable)
       .values({
+        crawlId: input.crawlId ?? null,
+        crawlPageId: input.crawlPageId ?? null,
         digestOptIn: input.digestOptIn ?? false,
         ingestor: ingestorName,
         payload: input.payload,
+        // Lets a crawl space out its own fetches without holding the worker
+        // in a sleep; the claim query already filters on `run_after <= now()`.
+        runAfter: input.runAfter ?? new Date(),
         status: "queued",
         url: requestedUrl,
       })
@@ -357,6 +431,8 @@ export class IngestService implements IngestServiceContract {
         ingestor,
         payload,
         digest_opt_in as "digestOptIn",
+        crawl_id as "crawlId",
+        crawl_page_id as "crawlPageId",
         attempts,
         max_attempts as "maxAttempts"
     `)) as unknown as ClaimedIngestJob[];
@@ -390,6 +466,22 @@ export class IngestService implements IngestServiceContract {
         url: job.url,
       });
 
+      // Fan out *before* the job is marked successful, and let a throw here
+      // fail the job. Expanding afterwards would mean a crash in between
+      // leaves the page marked done with its links never walked, quietly
+      // stalling the crawl; this way the reaper requeues the job and the
+      // re-fetch harvests them again. Re-expansion is safe because the
+      // frontier inserts are ON CONFLICT DO NOTHING.
+      if (job.crawlId !== null && job.crawlPageId !== null) {
+        await this.crawlHooks?.onPageIngested({
+          crawlId: job.crawlId,
+          crawlPageId: job.crawlPageId,
+          itemId: result.itemId,
+          outboundLinks: result.outboundLinks,
+          title: result.title,
+        });
+      }
+
       await db
         .update(ingestJobsTable)
         .set({
@@ -398,7 +490,7 @@ export class IngestService implements IngestServiceContract {
           itemId: result.itemId,
           lockedAt: null,
           lockedBy: null,
-          result,
+          result: toPublicResult(result),
           status: "success",
           updatedAt: new Date(),
         })
@@ -426,6 +518,25 @@ export class IngestService implements IngestServiceContract {
           updatedAt: new Date(),
         })
         .where(eq(ingestJobsTable.id, job.id));
+
+      // Only once the retries are spent. Marking the page failed on the first
+      // attempt would let the crawl finish while the job is still queued for
+      // another go — the page count would be wrong and the crawl would report
+      // itself done early.
+      if (!willRetry && job.crawlId !== null && job.crawlPageId !== null) {
+        try {
+          await this.crawlHooks?.onPageFailed({
+            crawlId: job.crawlId,
+            crawlPageId: job.crawlPageId,
+            errorMessage: message,
+          });
+        } catch (hookError) {
+          // The job is already recorded as failed; losing the bookkeeping is
+          // not worth masking the original error. The crawl sweep in the
+          // worker will notice the stalled page and close the crawl out.
+          console.error(hookError, "crawl failure hook failed");
+        }
+      }
 
       return {
         jobId: job.id,
@@ -486,7 +597,7 @@ export class IngestService implements IngestServiceContract {
 
   private async ingestInternal(
     input: InternalIngestInput,
-  ): Promise<IngestResult> {
+  ): Promise<InternalIngestResult> {
     const db = requireDatabase(this.database);
     const requestedUrl = normalizeSourceUrl(input.url);
     const ingestorName = resolveIngestorName(
@@ -561,7 +672,7 @@ export class IngestService implements IngestServiceContract {
       latestExtractionId = storedExtraction.id;
     }
 
-    let sourceItem: IngestResult | null = null;
+    let sourceItem: InternalIngestResult | null = null;
     let linkedFetchError: string | null = null;
     const linkedUrl = !input.skipLinkedUrls
       ? pickFirstLinkedUrl(preferredExtraction?.linkedUrls)
@@ -612,11 +723,16 @@ export class IngestService implements IngestServiceContract {
       ingestor: ingestorName,
       itemId,
       normalizedUrl,
+      // Taken from the winning extraction rather than the stored item so a
+      // crawl sees the links of the capture it just made. Empty for every
+      // ingestor but `generic` — only that one walks HTML.
+      outboundLinks: preferredExtraction?.outboundLinks ?? [],
       snapshotId: latestSnapshotId,
       sourceItem,
       sourceType: preferredExtraction?.sourceType ?? identity.sourceType,
       status: preferredExtraction?.status ?? "failed",
       subjectItemId: null,
+      title: preferredExtraction?.title ?? null,
     };
   }
 
@@ -631,7 +747,12 @@ export class IngestService implements IngestServiceContract {
   }
 
   async list(
-    input: { search?: string; sourceType?: string; tagIds?: number[] } = {},
+    input: {
+      includeCrawledPages?: boolean;
+      search?: string;
+      sourceType?: string;
+      tagIds?: number[];
+    } = {},
   ) {
     const db = requireDatabase(this.database);
 
@@ -660,6 +781,20 @@ export class IngestService implements IngestServiceContract {
       conditions.push(inArray(itemsTable.id, tagSubquery));
     }
 
+    // Hide the sub-pages a crawl collected: the library shows one row for the
+    // site (its root page), and the pages themselves are browsed in the site
+    // view. Filtered here rather than in the client because this query is
+    // still unpaginated — a 200-page crawl would otherwise ship 200 rows over
+    // the wire for the browser to throw away.
+    if (!input.includeCrawledPages) {
+      conditions.push(sql`not exists (
+        select 1
+        from ${crawlPagesTable}
+        where ${crawlPagesTable.itemId} = ${itemsTable.id}
+          and ${crawlPagesTable.isRoot} = false
+      )`);
+    }
+
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     const rows = await db
@@ -677,8 +812,14 @@ export class IngestService implements IngestServiceContract {
 
     const itemIds = rows.map((row) => row.id);
 
-    const [countRows, commentRows, extractionRows, totalRows, tagRows] =
-      await Promise.all([
+    const [
+      countRows,
+      commentRows,
+      extractionRows,
+      totalRows,
+      tagRows,
+      crawlRows,
+    ] = await Promise.all([
         db
           .select({
             count: sql<number>`count(*)`,
@@ -717,6 +858,27 @@ export class IngestService implements IngestServiceContract {
           .from(itemTagsTable)
           .innerJoin(tagsTable, eq(itemTagsTable.tagId, tagsTable.id))
           .where(inArray(itemTagsTable.itemId, itemIds)),
+        // Root pages only — every other crawl page was filtered out above.
+        // This is what turns one library row into "a site of N pages" rather
+        // than a lone index page.
+        db
+          .select({
+            id: crawlsTable.id,
+            itemId: crawlPagesTable.itemId,
+            label: crawlsTable.label,
+            pageId: crawlPagesTable.id,
+            pagesDone: crawlsTable.pagesDone,
+            pagesQueued: crawlsTable.pagesQueued,
+            status: crawlsTable.status,
+          })
+          .from(crawlPagesTable)
+          .innerJoin(crawlsTable, eq(crawlsTable.id, crawlPagesTable.crawlId))
+          .where(
+            and(
+              inArray(crawlPagesTable.itemId, itemIds),
+              eq(crawlPagesTable.isRoot, true),
+            ),
+          ),
       ]);
 
     const snapshotCountByItem = new Map(
@@ -740,6 +902,24 @@ export class IngestService implements IngestServiceContract {
       tagsByItem.set(row.itemId, existing);
     }
 
+    const crawlByRootItem = new Map(
+      crawlRows
+        .filter((row) => row.itemId !== null)
+        .map((row) => [
+          row.itemId as number,
+          {
+            id: row.id,
+            label: row.label,
+            // Pages actually archived, root included. Queued pages are
+            // reported separately so the row can show a crawl still filling in.
+            pageCount: row.pagesDone,
+            pageId: row.pageId,
+            pagesQueued: row.pagesQueued,
+            status: row.status,
+          },
+        ]),
+    );
+
     return {
       items: rows.map((row) => ({
         ...toSummary(row, {
@@ -747,6 +927,7 @@ export class IngestService implements IngestServiceContract {
           latestExtractionStatus: latestExtractionByItem.get(row.id) ?? null,
           snapshotCount: snapshotCountByItem.get(row.id) ?? 0,
         }),
+        crawl: crawlByRootItem.get(row.id) ?? null,
         tags: tagsByItem.get(row.id) ?? [],
       })),
       total: Number(totalRows[0]?.count ?? 0),
@@ -765,7 +946,7 @@ export class IngestService implements IngestServiceContract {
       throw new Error(`Item ${input.id} not found`);
     }
 
-    const [snapshots, comments, itemTagRows, linkedItemRows] =
+    const [snapshots, comments, itemTagRows, linkedItemRows, crawlPageRows] =
       await Promise.all([
         db
           .select()
@@ -790,6 +971,23 @@ export class IngestService implements IngestServiceContract {
           .from(itemsTable)
           .where(eq(itemsTable.subjectItemId, input.id))
           .orderBy(desc(itemsTable.ingestedAt))
+          .limit(1),
+        // Unlike list(), this matches any crawl page rather than just roots:
+        // the reader needs the breadcrumb most on a sub-page, which is exactly
+        // the item the library never shows.
+        db
+          .select({
+            id: crawlsTable.id,
+            label: crawlsTable.label,
+            pageId: crawlPagesTable.id,
+            pagesDone: crawlsTable.pagesDone,
+            pagesQueued: crawlsTable.pagesQueued,
+            status: crawlsTable.status,
+          })
+          .from(crawlPagesTable)
+          .innerJoin(crawlsTable, eq(crawlsTable.id, crawlPagesTable.crawlId))
+          .where(eq(crawlPagesTable.itemId, input.id))
+          .orderBy(crawlPagesTable.id)
           .limit(1),
       ]);
 
@@ -817,6 +1015,16 @@ export class IngestService implements IngestServiceContract {
           snapshotCount: snapshots.length,
         }),
         tags: itemTagRows.map((row) => ({ id: row.tagId, name: row.tagName })),
+        crawl: crawlPageRows[0]
+          ? {
+              id: crawlPageRows[0].id,
+              label: crawlPageRows[0].label,
+              pageCount: crawlPageRows[0].pagesDone,
+              pageId: crawlPageRows[0].pageId,
+              pagesQueued: crawlPageRows[0].pagesQueued,
+              status: crawlPageRows[0].status,
+            }
+          : null,
         comments: comments.map((comment) => ({
           author: comment.author,
           contentMarkdown: comment.contentMarkdown,
@@ -1061,6 +1269,11 @@ export class IngestService implements IngestServiceContract {
         latestExtractionStatus: latestExtractionByItem.get(row.id) ?? null,
         snapshotCount: snapshotCountByItem.get(row.id) ?? 0,
       }),
+      // Always null here. This helper only ever summarizes an item nested
+      // inside another one's detail view — a thread's attached article — and
+      // that view has no room for a second site breadcrumb. The crawl a page
+      // belongs to is reported on the item the reader actually opened.
+      crawl: null,
       tags: tagsByItem.get(row.id) ?? [],
     }));
   }

@@ -125,6 +125,34 @@ type GenericCaptureInput = {
   url: string;
 };
 
+// Hard cap on links carried out of one page. A crawl is bounded by maxPages
+// anyway, so the only thing an unbounded list would buy is a pathological
+// link-farm page holding tens of thousands of strings in memory.
+const MAX_OUTBOUND_LINKS = 2000;
+
+/**
+ * Collect every link on the page, in document order.
+ *
+ * Deliberately reads the *whole* document rather than Readability's output.
+ * Readability's job is to throw away nav, sidebars and link lists — which on a
+ * table-of-contents page is the entire point of the page. Harvesting from the
+ * parsed article would return nothing for exactly the pages a crawl exists to
+ * walk.
+ *
+ * Uses `anchor.href` rather than resolving getAttribute("href") by hand so
+ * that a document's own `<base href>` is honoured.
+ */
+function harvestOutboundLinks(document: Document): string[] {
+  const seen = new Set<string>();
+  for (const anchor of document.querySelectorAll("a[href]")) {
+    const href = (anchor as HTMLAnchorElement).href?.trim();
+    if (!href) continue;
+    seen.add(href);
+    if (seen.size >= MAX_OUTBOUND_LINKS) break;
+  }
+  return [...seen];
+}
+
 const genericIngestor = {
   name: "generic" as const,
   matches() {
@@ -185,6 +213,10 @@ const genericIngestor = {
 
     const dom = new JSDOM(snapshot.body, { url });
     const document = dom.window.document;
+    // Harvested before Readability runs, and carried on the failure paths
+    // below too: a table-of-contents page has no prose to extract and is
+    // precisely the page a crawl needs the links from.
+    const outboundLinks = harvestOutboundLinks(document);
     const parsed = new Readability(document).parse();
 
     if (!parsed?.textContent?.trim()) {
@@ -193,6 +225,7 @@ const genericIngestor = {
         extractor: "readability",
         extractorVersion: EXTRACTOR_VERSION,
         metadata: { contentType: snapshot.contentType },
+        outboundLinks,
         sourceType: "webpage",
         sourceUrl: url,
         status: "failed" as ExtractionStatus,
@@ -218,6 +251,7 @@ const genericIngestor = {
           contentType: snapshot.contentType,
           wordCount,
         },
+        outboundLinks,
         sourceType: "webpage",
         sourceUrl: url,
         status: "failed" as ExtractionStatus,
@@ -241,6 +275,7 @@ const genericIngestor = {
         siteName: firstString(parsed.siteName),
         wordCount,
       },
+      outboundLinks,
       sourceCreatedAt,
       sourceType: "article",
       sourceUrl: url,

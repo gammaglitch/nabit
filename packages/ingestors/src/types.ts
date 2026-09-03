@@ -33,6 +33,16 @@ export type ExtractionAttempt = {
   extractor: string;
   extractorVersion?: string | null;
   linkedUrls?: string[];
+  /**
+   * Every link on the page, in document order, for a crawl to walk.
+   *
+   * Distinct from `linkedUrls`, which keeps its narrow meaning: the single
+   * off-site article a discussion thread points at. These are unfiltered —
+   * scoping is the crawl's job (see modules/crawl/scope.ts), not the
+   * extractor's — and are present even on extractions that graded `failed`,
+   * because a table-of-contents page is exactly that: no prose, all links.
+   */
+  outboundLinks?: string[];
   metadata?: Record<string, unknown>;
   sourceCreatedAt?: string | null;
   sourceType?: string;

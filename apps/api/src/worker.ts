@@ -1,6 +1,7 @@
 import { createDatabaseState } from "./db/client";
 import { getAppEnv } from "./lib/config/env";
 import { AssetService } from "./modules/assets/service";
+import { CrawlService } from "./modules/crawl/service";
 import { DigestService } from "./modules/digest/service";
 import { ExportService } from "./modules/export/service";
 import { IngestService } from "./modules/ingest/service";
@@ -42,6 +43,14 @@ async function main() {
   const env = getAppEnv();
   const assets = new AssetService(database, env.assetStoragePath);
   const service = new IngestService(database, env, assets);
+  // This is the process that actually runs a crawl: the API only ever queues
+  // the root page, and every fan-out happens here as jobs are worked. Same
+  // hand-wiring as lib/services.ts, because the two services need each other.
+  const crawls = new CrawlService(database, service);
+  service.setCrawlHooks({
+    onPageFailed: (input) => crawls.markPageFailed(input),
+    onPageIngested: (input) => crawls.expand(input),
+  });
   const settings = new SettingsService(database, env);
   const digests = new DigestService(
     database,
@@ -73,6 +82,17 @@ async function main() {
           }
         } catch (error) {
           console.error(error, "reaper failed");
+        }
+        // Same tick as the job reaper, and for the same reason: a crawl whose
+        // last page was reaped, or whose row was written but never queued,
+        // cannot notice on its own that it is finished.
+        try {
+          const swept = await crawls.sweep();
+          if (swept.finished > 0 || swept.requeued > 0) {
+            console.info({ ...swept, workerId }, "swept crawls");
+          }
+        } catch (error) {
+          console.error(error, "crawl sweep failed");
         }
         lastReapAt = Date.now();
       }

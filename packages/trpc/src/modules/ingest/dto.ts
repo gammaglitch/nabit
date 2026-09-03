@@ -105,8 +105,24 @@ export const ItemListInput = z
     sourceType: z.string().optional(),
     tagIds: z.array(z.number()).optional(),
     search: z.string().optional(),
+    // Sub-pages collected by a crawl are hidden by default: the library shows
+    // one row for the site, and the pages are browsed in the site view.
+    includeCrawledPages: z.boolean().optional(),
   })
   .optional();
+
+// Present only on an item that is the root of a crawl, and what lets the
+// library render "a site of N pages" instead of a lone index page.
+export const ItemCrawlSummary = z.object({
+  id: z.number(),
+  label: z.string().nullable(),
+  pageCount: z.number().int().nonnegative(),
+  // This item's own page within the crawl, so the reader can link straight to
+  // its place in the site tree.
+  pageId: z.number(),
+  pagesQueued: z.number().int().nonnegative(),
+  status: z.string(),
+});
 
 export const ItemSummaryOutput = z.object({
   id: z.number(),
@@ -126,6 +142,7 @@ export const ItemSummaryOutput = z.object({
   commentCount: z.number().int().nonnegative(),
   latestExtractionStatus: ExtractionStatus.nullable(),
   tags: z.array(z.object({ id: z.number(), name: z.string() })),
+  crawl: ItemCrawlSummary.nullable(),
 });
 
 export const ItemListOutput = z.object({

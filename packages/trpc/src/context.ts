@@ -1,4 +1,15 @@
 import type {
+  CancelCrawlInputDTO,
+  DeleteCrawlInputDTO,
+  DeleteCrawlOutputDTO,
+  GetCrawlInputDTO,
+  GetCrawlOutputDTO,
+  ListCrawlsInputDTO,
+  ListCrawlsOutputDTO,
+  StartCrawlInputDTO,
+  StartCrawlOutputDTO,
+} from "./modules/crawl/dto";
+import type {
   GetDigestInputDTO,
   GetDigestOutputDTO,
   ListDigestsInputDTO,
@@ -61,6 +72,23 @@ export interface AuthUser {
 }
 
 export interface TrpcServices {
+  crawl: {
+    start(
+      input: StartCrawlInputDTO,
+    ): StartCrawlOutputDTO | Promise<StartCrawlOutputDTO>;
+    list(
+      input: ListCrawlsInputDTO,
+    ): ListCrawlsOutputDTO | Promise<ListCrawlsOutputDTO>;
+    get(
+      input: GetCrawlInputDTO,
+    ): GetCrawlOutputDTO | Promise<GetCrawlOutputDTO>;
+    cancel(
+      input: CancelCrawlInputDTO,
+    ): GetCrawlOutputDTO | Promise<GetCrawlOutputDTO>;
+    delete(
+      input: DeleteCrawlInputDTO,
+    ): DeleteCrawlOutputDTO | Promise<DeleteCrawlOutputDTO>;
+  };
   digest: {
     list(
       input: ListDigestsInputDTO,
