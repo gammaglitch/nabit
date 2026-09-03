@@ -1,4 +1,6 @@
-import type { ComponentPropsWithoutRef } from "react";
+"use client";
+
+import { type ComponentPropsWithoutRef, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getApiOrigin } from "@/lib/trpc/client";
@@ -9,6 +11,21 @@ function resolveAssetSrc(src: string | undefined) {
     return `${getApiOrigin()}${src}`;
   }
   return src;
+}
+
+function OutboundLink(props: ComponentPropsWithoutRef<"a">) {
+  return (
+    <a
+      style={{
+        color: "var(--accent)",
+        textDecorationColor: "var(--accent)",
+        textUnderlineOffset: 2,
+      }}
+      target="_blank"
+      rel="noreferrer"
+      {...props}
+    />
+  );
 }
 
 const markdownComponents = {
@@ -78,18 +95,7 @@ const markdownComponents = {
       {...props}
     />
   ),
-  a: (props: ComponentPropsWithoutRef<"a">) => (
-    <a
-      style={{
-        color: "var(--accent)",
-        textDecorationColor: "var(--accent)",
-        textUnderlineOffset: 2,
-      }}
-      target="_blank"
-      rel="noreferrer"
-      {...props}
-    />
-  ),
+  a: (props: ComponentPropsWithoutRef<"a">) => <OutboundLink {...props} />,
   ul: (props: ComponentPropsWithoutRef<"ul">) => (
     <ul
       style={{
@@ -247,9 +253,83 @@ const markdownComponents = {
   ),
 };
 
-export function MarkdownArticle({ markdown }: { markdown: string }) {
+/**
+ * The two link props are a pair, and the type enforces it: the click handler
+ * calls preventDefault() before delegating, so a resolver without a follower
+ * would turn every matched link into a no-op.
+ *
+ * `resolveInternalHref` maps an href from the markdown to an in-app URL, or
+ * null to leave the link pointing where the page pointed it. `onFollow...` is
+ * called in place of a real navigation so the site browser can swap panes
+ * rather than reload the app.
+ *
+ * Only the site browser passes these. Everywhere else an archived link stays
+ * external, because "the archived copy of this URL" is only a question a crawl
+ * can answer — see features/sites/utils/archive-links.ts.
+ */
+export type MarkdownArticleProps = { markdown: string } & (
+  | {
+      resolveInternalHref: (href: string | undefined) => string | null;
+      onFollowInternalHref: (href: string) => void;
+    }
+  | { resolveInternalHref?: undefined; onFollowInternalHref?: undefined }
+);
+
+export function MarkdownArticle({
+  markdown,
+  resolveInternalHref,
+  onFollowInternalHref,
+}: MarkdownArticleProps) {
+  const components = useMemo(() => {
+    if (!resolveInternalHref) return markdownComponents;
+
+    return {
+      ...markdownComponents,
+      a: ({ href, ...props }: ComponentPropsWithoutRef<"a">) => {
+        const internal = resolveInternalHref(href);
+        if (!internal) return <OutboundLink href={href} {...props} />;
+
+        // A cross-page `#anchor` is dropped by the resolver and lands at the
+        // top of the target page. Nothing to preserve it for yet: no rehype
+        // plugin assigns heading ids, so the fragment has no target on the
+        // destination either. Revisit together with heading anchors.
+
+        return (
+          <a
+            href={internal}
+            onClick={(event) => {
+              // Leave the modified clicks to the browser, so "open in new tab"
+              // on an archived link still works.
+              if (
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey ||
+                event.button !== 0
+              ) {
+                return;
+              }
+              event.preventDefault();
+              onFollowInternalHref?.(internal);
+            }}
+            style={{
+              color: "var(--accent)",
+              // Dotted, where an outbound link is solid: this one keeps you
+              // inside the archive rather than sending you to the live web.
+              textDecorationColor: "var(--accent)",
+              textDecorationStyle: "dotted",
+              textUnderlineOffset: 2,
+            }}
+            title="Archived copy — opens in this site"
+            {...props}
+          />
+        );
+      },
+    };
+  }, [resolveInternalHref, onFollowInternalHref]);
+
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
       {markdown}
     </ReactMarkdown>
   );

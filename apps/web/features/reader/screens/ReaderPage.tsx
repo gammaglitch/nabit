@@ -7,6 +7,7 @@ import {
   TagPicker,
   type TagPickerAnchor,
 } from "@/features/items/components/TagPicker";
+import { useDeleteItem } from "@/features/items/hooks/useDeleteItem";
 import { useDigestOptIn } from "@/features/items/hooks/useDigestOptIn";
 import { useReextract } from "@/features/items/hooks/useReextract";
 import { useTagOperations } from "@/features/items/hooks/useTagOperations";
@@ -24,6 +25,7 @@ import {
 import { trpc } from "@/lib/trpc/react";
 import { ArticleChat } from "../components/ArticleChat";
 import { CommentTree } from "../components/CommentTree";
+import { DeleteItemButton } from "../components/DeleteItemButton";
 import { MarkdownArticle } from "../components/MarkdownArticle";
 import { ReextractButton } from "../components/ReextractButton";
 
@@ -38,6 +40,7 @@ export default function ReaderPage({ id }: { id: number }) {
   const { addTag, removeTag } = useTagOperations();
   const { toggleDigestOptIn, isTogglingDigestOptIn } = useDigestOptIn();
   const { reextractItem, isReextracting } = useReextract();
+  const { deleteItem, isDeleting } = useDeleteItem();
 
   const detailQuery = trpc.ingest.get.useQuery(
     { id },
@@ -284,6 +287,17 @@ export default function ReaderPage({ id }: { id: number }) {
           disabled={isTogglingDigestOptIn}
           onToggle={() => {
             void toggleDigestOptIn(raw.id, !raw.digestOptIn);
+          }}
+          style={{ fontSize: 11, letterSpacing: "0.06em", padding: "5px 10px" }}
+        />
+        <DeleteItemButton
+          disabled={isDeleting}
+          // Deletes the item this page is about, never the linked article a
+          // thread points at — that one is reachable and deletable on its own.
+          onDelete={async () => {
+            await deleteItem(raw.id);
+            // Nothing left to read: the query would 404 on the next refetch.
+            router.push("/items");
           }}
           style={{ fontSize: 11, letterSpacing: "0.06em", padding: "5px 10px" }}
         />

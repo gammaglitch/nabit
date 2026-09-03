@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownArticle } from "@/features/reader/components/MarkdownArticle";
 import { Icon } from "@/features/shared/components/Icon";
 import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
@@ -9,8 +9,8 @@ import { hostname } from "@/features/shared/utils/source";
 import { trpc } from "@/lib/trpc/react";
 import { CrawlProgress } from "../components/CrawlProgress";
 import { SiteTree } from "../components/SiteTree";
-import { StatusBadge } from "./SitesPage";
 import { useCrawl, useCrawls } from "../hooks/useCrawls";
+import { buildArchiveIndex, resolveArchivedPage } from "../utils/archive-links";
 import {
   buildSiteTree,
   type CrawlPage,
@@ -18,6 +18,7 @@ import {
   isReadable,
   pageLabel,
 } from "../utils/tree";
+import { StatusBadge } from "./SitesPage";
 
 export default function SiteBrowserPage({ id }: { id: number }) {
   const router = useRouter();
@@ -110,6 +111,42 @@ export default function SiteBrowserPage({ id }: { id: number }) {
     { id: selectedPage?.itemId ?? 0 },
     { enabled: selectedPage?.itemId != null },
   );
+
+  // A link in archived prose that points at a page this crawl also archived
+  // should stay inside the archive. The stored markdown is left untouched —
+  // see utils/archive-links.ts for why the rewrite happens here and not on
+  // ingest — so anything the crawl did not reach still goes to the live web.
+  const archiveIndex = useMemo(() => buildArchiveIndex(pages), [pages]);
+  const selectedUrl = selectedPage?.url ?? null;
+  const resolveInternalHref = useCallback(
+    (href: string | undefined) => {
+      if (!selectedUrl) return null;
+      const pageId = resolveArchivedPage(archiveIndex, href, selectedUrl);
+      return pageId === null ? null : `/sites/${id}?page=${pageId}`;
+    },
+    [archiveIndex, id, selectedUrl],
+  );
+  // `push`, unlike the tree's `select`, which replaces. Picking a page in the
+  // tree is adjusting a view; following a link through the archive is going
+  // somewhere, and Back has to bring you home from it.
+  const followInternalHref = useCallback(
+    (href: string) => {
+      router.push(href, { scroll: false });
+    },
+    [router],
+  );
+
+  // Next's `scroll` option moves the document, which never scrolls here: the
+  // shell is height:100%/overflow:hidden and the reading pane below is the
+  // scroll container. It is not remounted by a `?page=` change, so it keeps the
+  // previous page's offset and a newly opened page would start halfway down.
+  const readingPaneRef = useRef<HTMLElement | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the page id is the trigger, not a value the body reads
+  useEffect(() => {
+    // Assigning scrollTop rather than calling scrollTo: the latter is not
+    // implemented on elements in jsdom, and there is nothing to animate here.
+    if (readingPaneRef.current) readingPaneRef.current.scrollTop = 0;
+  }, [selectedPage?.id]);
 
   if (!Number.isFinite(id) || id <= 0) {
     return <Centered>[INVALID SITE ID]</Centered>;
@@ -243,7 +280,7 @@ export default function SiteBrowserPage({ id }: { id: number }) {
           </nav>
         </aside>
 
-        <main style={{ minHeight: 0, overflowY: "auto" }}>
+        <main ref={readingPaneRef} style={{ minHeight: 0, overflowY: "auto" }}>
           {!selectedPage && (
             <Centered>
               {active
@@ -287,7 +324,11 @@ export default function SiteBrowserPage({ id }: { id: number }) {
               <div style={{ marginTop: 28 }}>
                 {detailQuery.isLoading && <Muted>Loading page…</Muted>}
                 {!detailQuery.isLoading && markdown.trim().length > 0 && (
-                  <MarkdownArticle markdown={markdown} />
+                  <MarkdownArticle
+                    markdown={markdown}
+                    onFollowInternalHref={followInternalHref}
+                    resolveInternalHref={resolveInternalHref}
+                  />
                 )}
                 {!detailQuery.isLoading && markdown.trim().length === 0 && (
                   <Muted>

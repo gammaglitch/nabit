@@ -245,6 +245,20 @@ Web side, in `apps/web/features/sites/`:
   pass. It is pure and tested — including the cases that matter for not losing
   a page from the view: an orphan whose parent is missing is shown at the root,
   and a page claiming itself as its own parent does not hang the walk.
+- `archive-links.ts` (`features/sites/utils/`) resolves a link in the archived
+  prose to the archived copy of what it points at, so browsing the crawl by
+  clicking stays inside the crawl. The tree is not the only way through a site.
+
+  This is the one place the *stored* content is not the whole story, and it is
+  still not rewritten: `MarkdownArticle` takes a resolver and swaps the href as
+  it renders, only in the site browser and only for pages this crawl archived
+  and can display. Everything else keeps pointing at the live web, which is
+  also the failure mode when a match is missed — see *Why not httrack*.
+
+  Matching does not go through `normalizeSourceUrl`. Both sides of the
+  comparison use `canonicalize()` in that file, so only internal consistency
+  matters, and it can drop `www.` and the scheme — which the server's
+  normalizer keeps — without any risk of drifting from it.
 
 ## Known gaps
 
