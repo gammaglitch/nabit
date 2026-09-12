@@ -196,6 +196,72 @@ cd apps/api
 bun run db:push
 ```
 
+## Known issues
+
+### The Docker image build is broken on the current `oven/bun` tag
+
+`docker/api.Dockerfile` uses `FROM oven/bun:1-alpine`. That floating tag now
+resolves to **Bun 1.4.2**, while the repo declares `packageManager: bun@1.3.10`.
+Bun 1.4 switched to isolated (pnpm-style) installs and leaves dangling workspace
+symlinks here — the link and the store disagree on the peer hash:
+
+```
+/app/apps/api/node_modules/drizzle-orm
+  -> ../../../node_modules/.bun/drizzle-orm@0.45.1+af9538742efbc90b/...   (missing)
+actual store entry:
+     /app/node_modules/.bun/drizzle-orm@0.45.1+e7873dd7fba7ff2f
+```
+
+`api` and `ingest-worker` then crash-loop on `Cannot find module
+'drizzle-orm/postgres-js'`. It survives `--no-cache`, so it is not stale layers.
+**This blocks `docker compose up` and any deploy that rebuilds the image.**
+
+Pinning the base image to the declared version (`FROM oven/bun:1.3.10-alpine`)
+fixes it and has been verified; staying on latest Bun would instead need
+`bun install --linker=hoisted`. Neither is committed yet.
+
+Running the API and worker on the host against only the `db` container sidesteps
+it entirely, which is the faster loop for development anyway:
+
+```bash
+docker compose up -d db
+export DATABASE_URL=postgresql://nabit:$POSTGRES_PASSWORD@127.0.0.1:5432/nabit
+cd apps/api && bun src/index.ts     # API
+cd apps/api && bun src/worker.ts    # ingest worker
+```
+
+### Reddit can only be archived through the browser extension
+
+Reddit answers `.json` with a `403` "blocked by network security" page for every
+unauthenticated client. This is **not** a datacenter-IP block — a residential
+connection gets the same response, so `compose.vpn.yml` does not help — and
+`robots.txt` is now `Disallow: /` for all agents. Self-service API signup also
+closed in November 2025 behind Reddit's Responsible Builder Policy, so an OAuth
+client cannot simply be registered.
+
+The browser extension captures threads from the user's own logged-in session
+instead. Everything else that ingests a reddit URL — the web UI, the Discord
+bot, REST clients, bookmark and HN-favorite imports, and the linked-item
+recursion under an HN thread — still takes the server path and still fails.
+See [Browser-captured reddit
+threads](/docs/features/ingest.md#browser-captured-reddit-threads).
+
+### Reddit threads capture fewer comments than reddit reports
+
+Reddit truncates comment trees with `more` placeholders, and those branches are
+dropped. Measured: a thread reporting 627 comments stored 486, with 138 behind
+stubs. Nothing is lost between snapshot and database — reddit never sends the
+rest — and the official API behaves identically. See [Known
+gaps](/docs/features/ingest.md#known-gaps) for the numbers and the two possible
+fixes.
+
+### `.env` backups are not gitignored
+
+`.gitignore` covers `.env`, `.env.local` and `.env.*.local`, but not names like
+`.env.staging.bak`. Since these files carry `API_TOKEN` and
+`WXT_API_TOKEN`, a copy made for safekeeping is one `git add -A` away from being
+committed. Keep backups outside the repo.
+
 ## Agent-friendly docs
 
 If you're reading this as or with an LLM coding agent, see
