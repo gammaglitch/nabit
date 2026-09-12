@@ -26,7 +26,9 @@ from across the web — articles, Hacker News threads, Reddit threads, tweets.
   their HN id, so a repeat import refreshes the existing archive rather than
   duplicating it. Since each favorite is queued as its HN thread, the
   ingestor archives the discussion *and*, where the submission links
-  off-site, the article it points at, filed as the thread's child.
+  off-site, the article it points at, filed as the thread's child. Give the
+  import a tag and everything it queues — threads and their articles — lands
+  under it.
 - **Purpose-built ingestors per source.** HN, Reddit, and tweet
   extractors pull structured metadata (points, score, subreddit, author,
   timestamps) plus the full comment tree — not just the raw HTML

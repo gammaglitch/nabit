@@ -1,10 +1,11 @@
-import type { BatchResult, IngestItem } from "./api";
+import type { BatchResult, IngestItem, IngestTags } from "./api";
 import type { HnFavorite, HnFavoriteKind } from "./hn-favorites";
 
 export const INGEST_MESSAGE = "nabit:ingest";
 
 export interface IngestMessage {
   items: IngestItem[];
+  tags: IngestTags;
   type: typeof INGEST_MESSAGE;
 }
 
@@ -18,14 +19,19 @@ export function isIngestMessage(value: unknown): value is IngestMessage {
   }
 
   const message = value as Partial<IngestMessage>;
-  return message.type === INGEST_MESSAGE && Array.isArray(message.items);
+  return (
+    message.type === INGEST_MESSAGE &&
+    Array.isArray(message.items) &&
+    Array.isArray(message.tags)
+  );
 }
 
 /** Hands a batch to the background worker and waits for its verdict. */
 export async function sendIngestMessage(
   items: IngestItem[],
+  tags: IngestTags = [],
 ): Promise<IngestReply> {
-  const message: IngestMessage = { items, type: INGEST_MESSAGE };
+  const message: IngestMessage = { items, tags, type: INGEST_MESSAGE };
   return (await browser.runtime.sendMessage(message)) as IngestReply;
 }
 

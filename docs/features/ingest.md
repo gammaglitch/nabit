@@ -6,8 +6,8 @@ How URLs become items in `nabit`. This doc reflects the code in `apps/api/src/mo
 
 | Surface | Route / procedure | Notes |
 | --- | --- | --- |
-| REST | `POST /ingest` | Body `{ url, payload?, ingestor? }`. Auth required (`req.user`). Returns `201` on create, `200` if the item already existed. |
-| REST | `POST /ingest/batch` | Body `{ items: IngestBody[] }`. Loops `ingest()` sequentially; one throw aborts the rest. |
+| REST | `POST /ingest` | Body `{ url, payload?, ingestor?, tags? }`. Auth required (`req.user`). Returns `201` on create, `200` if the item already existed. |
+| REST | `POST /ingest/batch` | Body `{ items: IngestBody[], tags? }`. Loops `ingest()` sequentially; one throw aborts the rest. Batch-level `tags` apply to every item, on top of any the item carries. |
 | tRPC | `ingest.ingest` / `ingest.batch` | Same shapes as REST, plus `ingest.list`, `ingest.get`, `ingest.delete` for read/delete. |
 
 REST handlers live in `apps/api/src/server.ts`; the tRPC router is in `packages/trpc/src/modules/ingest/router.ts`.
@@ -22,7 +22,7 @@ Auth accepts either a Supabase JWT or the static `API_TOKEN` env var (used by th
 2. **Pick an ingestor.** `resolveIngestorName()` walks the `INGESTORS` array (`tweet`, `reddit`, `hacker_news`, `generic`) in order. First `matches()` wins; `generic` is the fallback. Callers can force one via the `ingestor` field on the request body.
 3. **Capture.** The ingestor returns one or more `SnapshotArtifact`s (raw `body` + `contentType`). Behavior per ingestor is in the next section.
 4. **Identify.** Each ingestor returns `{ externalId, sourceType, sourceUrl }` from the URL and/or first snapshot.
-5. **Upsert the item.** `ensureItem()` looks up by `(sourceType, externalId)`. If found, updates `sourceUrl` and returns `created: false`. Otherwise inserts a stub row and returns `created: true`.
+5. **Upsert the item.** `ensureItem()` looks up by `(sourceType, externalId)`. If found, updates `sourceUrl` and returns `created: false`. Otherwise inserts a stub row and returns `created: true`. Either way it applies the request's `tags` — see [Tagging on ingest](#tagging-on-ingest).
 6. **Per snapshot:** insert into `rawSnapshotsTable`, run `ingestor.extract()`, insert an `extractionsTable` row tagged `success` / `partial` / `failed`. Failed extractions are stored with `itemId = null` so they don't shadow good ones.
 7. **Pick the best extraction.** `preferExtraction()` ranks `success > partial > failed` and breaks ties by `contentText.length`. The winner is applied via `applyExtraction()`, which writes `author/title/contentText/metadata/sourceCreatedAt` onto the item, then **deletes and re-inserts** all comments for that item from the extraction.
 8. **Return** `{ created, itemId, normalizedUrl, ingestor, sourceType, status, snapshotId, extractionId }`.
@@ -62,6 +62,35 @@ All ingestors live in `apps/api/src/modules/ingest/ingestors.ts`.
 - Metadata: `excerpt`, `siteName`, `language`, `wordCount`, `contentType`.
 - Also emits `outboundLinks`: every link on the page, harvested from the full document **before** Readability runs, and present even on `failed` extractions. Only crawls read it — see [`crawl.md`](/docs/features/crawl.md) for why it cannot come from Readability's output.
 
+## Tagging on ingest
+
+Callers can name tags on the request and have them applied when the item
+lands. Names, not ids: the headless clients that use this — the browser
+extension's bulk import, userscripts, the Discord bot — have no tag-lookup
+round trip available, and `tags` has no REST surface at all.
+
+- `enqueue()` normalizes and stores them on `ingest_jobs.tags` (jsonb, null
+  when there are none), so a queued job still knows its tags whenever the
+  worker gets to it.
+- `normalizeTagNames()` trims, lowercases, de-duplicates, and caps at 20 tags
+  of 64 characters. It matches `TagsService.create` exactly, so an
+  ingest-applied tag reuses the row the reader would have made instead of
+  creating a near-duplicate beside it. This is the only validation on the REST
+  path, which never passes through the tRPC schema.
+- `applyTags()` creates any missing tag (`onConflictDoNothing`, then read
+  back) and attaches it. Both inserts tolerate conflicts, so a replayed job
+  re-attaches harmlessly.
+- Tags are applied to **existing** items too, unlike `digestOptIn`, which
+  `ensureItem` sets only on insert. Adding a tag is additive and can't clobber
+  user state, and re-importing an already-archived favorite under a tag is
+  exactly when the tag should stick.
+- A linked child item **inherits** the parent's tags — the article an HN
+  thread points at is part of the same batch of reading. `digestOptIn` is
+  deliberately not inherited, because it enrolls the item in paid LLM work.
+- Reusing an in-flight job keeps the first job's tags. Re-importing a URL
+  that is still queued under a new tag will not apply the new tag; once the
+  job finishes, a re-import queues fresh and tags normally.
+
 ## Storage
 
 Defined in `apps/api/src/db/schema.ts`:
@@ -70,7 +99,7 @@ Defined in `apps/api/src/db/schema.ts`:
 - `rawSnapshotsTable` — every captured byte stream. Re-extracting later is possible without re-fetching.
 - `extractionsTable` — one row per extraction attempt, linked to a snapshot. Failed attempts have `itemId = null`.
 - `commentsTable` — flattened comment tree with materialized paths.
-- `itemTagsTable` / `tagsTable` — tagging, managed via the `tags` tRPC router.
+- `itemTagsTable` / `tagsTable` — tagging, managed via the `tags` tRPC router and by `ensureItem` for tags supplied at ingest.
 - `crawlsTable` / `crawlPagesTable` — site crawls. Not part of this pipeline; see [`crawl.md`](/docs/features/crawl.md).
 
 ## Read / delete

@@ -8,7 +8,7 @@ export default defineBackground(() => {
   // Firefox honour; returning a promise only works in Firefox.
   browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (isIngestMessage(message)) {
-      ingestBatch(message.items)
+      ingestBatch(message.items, message.tags)
         .then((result) => sendResponse({ ok: true, result }))
         .catch((error: unknown) => {
           sendResponse({

@@ -96,6 +96,7 @@ type ClaimedIngestJob = {
   ingestor: string | null;
   maxAttempts: number;
   payload: unknown;
+  tags: string[] | null;
   url: string;
 };
 
@@ -104,6 +105,7 @@ type InternalIngestInput = {
   ingestor?: IngestorName | null;
   payload?: unknown;
   skipLinkedUrls?: boolean;
+  tags?: string[] | null;
   url: string;
 };
 
@@ -134,6 +136,48 @@ function rankStatus(status: ExtractionStatus) {
     default:
       return 1;
   }
+}
+
+/** Bounds an untrusted caller's tag list before it reaches the job row. */
+const MAX_TAGS_PER_JOB = 20;
+const MAX_TAG_NAME_LENGTH = 64;
+
+/**
+ * Normalizes exactly as `TagsService.create` does (`trim().toLowerCase()`), so
+ * a tag applied at ingest is the same row the reader would have made rather
+ * than a near-duplicate. Returns null for an empty list, which is what the
+ * column stores for the overwhelming majority of jobs.
+ *
+ * Exported for tests: this is the boundary an unvalidated REST body crosses,
+ * since `/ingest` and `/ingest/batch` never pass through the tRPC schema.
+ */
+export function normalizeTagNames(tags: unknown): string[] | null {
+  if (!Array.isArray(tags)) return null;
+
+  const names = new Set<string>();
+  for (const raw of tags) {
+    if (typeof raw !== "string") continue;
+    const name = raw.trim().toLowerCase().slice(0, MAX_TAG_NAME_LENGTH);
+    if (name) names.add(name);
+    if (names.size >= MAX_TAGS_PER_JOB) break;
+  }
+
+  return names.size > 0 ? [...names] : null;
+}
+
+/**
+ * Folds a batch-level tag list into one item's own. Normalization happens
+ * downstream in `applyTags`, so this only has to concatenate.
+ */
+function mergeBatchTags<T extends { tags?: string[] | null }>(
+  item: T,
+  batchTags: string[] | null | undefined,
+): T {
+  if (!batchTags?.length) {
+    return item;
+  }
+
+  return { ...item, tags: [...(item.tags ?? []), ...batchTags] };
 }
 
 function pickFirstLinkedUrl(linkedUrls: string[] | undefined) {
@@ -286,6 +330,7 @@ export class IngestService implements IngestServiceContract {
     digestOptIn?: boolean;
     ingestor?: IngestorName | null;
     payload?: unknown;
+    tags?: string[] | null;
     url: string;
   }): Promise<IngestResult> {
     return toPublicResult(
@@ -311,6 +356,7 @@ export class IngestService implements IngestServiceContract {
     ingestor?: IngestorName | null;
     payload?: unknown;
     runAfter?: Date;
+    tags?: string[] | null;
     url: string;
   }) {
     const db = requireDatabase(this.database);
@@ -326,8 +372,11 @@ export class IngestService implements IngestServiceContract {
     // idempotent so duplicates are merely wasteful, not incorrect.
     //
     // Note this also means a second enqueue for the same URL keeps the first
-    // job's `digestOptIn`. Re-nabbing with the box ticked won't enroll an
-    // already-queued item; use setDigestOptIn once it lands.
+    // job's `digestOptIn` and `tags`. Re-nabbing with the box ticked won't
+    // enroll an already-queued item; use setDigestOptIn once it lands. Tags
+    // are the same: importing a URL that is still in the queue under a new tag
+    // reuses the pending job, so the new tag is not applied. Once the job has
+    // finished, a re-import queues fresh and does tag it.
     //
     // Crawl jobs dedup within their own crawl only. Two crawls that overlap
     // would otherwise share one job, and only the crawl that happened to own
@@ -364,6 +413,7 @@ export class IngestService implements IngestServiceContract {
         // in a sleep; the claim query already filters on `run_after <= now()`.
         runAfter: input.runAfter ?? new Date(),
         status: "queued",
+        tags: normalizeTagNames(input.tags),
         url: requestedUrl,
       })
       .returning();
@@ -431,6 +481,7 @@ export class IngestService implements IngestServiceContract {
         ingestor,
         payload,
         digest_opt_in as "digestOptIn",
+        tags,
         crawl_id as "crawlId",
         crawl_page_id as "crawlPageId",
         attempts,
@@ -463,6 +514,7 @@ export class IngestService implements IngestServiceContract {
         ingestor: job.ingestor as IngestorName | null,
         payload: job.payload,
         skipLinkedUrls: false,
+        tags: job.tags,
         url: job.url,
       });
 
@@ -667,6 +719,7 @@ export class IngestService implements IngestServiceContract {
       digestOptIn: input.digestOptIn ?? false,
       sourceUrl: normalizedUrl,
       subjectItemId: null,
+      tags: input.tags ?? null,
     });
 
     let latestExtractionId: number | null = null;
@@ -705,8 +758,15 @@ export class IngestService implements IngestServiceContract {
       try {
         // No `digestOptIn` here on purpose: the user opted the thing they
         // nabbed into the digest, not whatever it happens to link out to.
+        //
+        // `tags` *are* inherited, and the difference is deliberate. digestOptIn
+        // enrolls an item in paid LLM work, so it stays narrow; a tag names a
+        // batch of reading, and the article an HN thread points at is squarely
+        // part of that batch. Tagging an import and then not finding the
+        // articles under that tag would be the surprising outcome.
         sourceItem = await this.ingestInternal({
           skipLinkedUrls: true,
+          tags: input.tags,
           url: linkedUrl,
         });
         // Only link newly-created children. If the user had already archived
@@ -762,10 +822,11 @@ export class IngestService implements IngestServiceContract {
 
   async ingestBatch(input: {
     items: Array<Parameters<IngestService["ingest"]>[0]>;
+    tags?: string[] | null;
   }) {
     const results = [];
     for (const item of input.items) {
-      results.push(await this.ingest(item));
+      results.push(await this.ingest(mergeBatchTags(item, input.tags)));
     }
     return { results };
   }
@@ -1307,6 +1368,7 @@ export class IngestService implements IngestServiceContract {
     identity: ItemIdentity & {
       digestOptIn: boolean;
       subjectItemId: number | null;
+      tags: string[] | null;
     },
   ) {
     // See `ItemIdentity.sourceTypeCandidates`: an ingestor that reclassifies
@@ -1344,6 +1406,12 @@ export class IngestService implements IngestServiceContract {
         .set(updates)
         .where(eq(itemsTable.id, existing[0].id));
 
+      // Unlike `digestOptIn` above, tags are applied to an existing item too.
+      // Adding one is additive and can't clobber user state, and re-importing
+      // an already-archived favorite under a tag is exactly when you want the
+      // tag to stick.
+      await this.applyTags(db, existing[0].id, identity.tags);
+
       return {
         created: false,
         itemId: existing[0].id,
@@ -1362,10 +1430,56 @@ export class IngestService implements IngestServiceContract {
       })
       .returning({ id: itemsTable.id });
 
+    await this.applyTags(db, item.id, identity.tags);
+
     return {
       created: true,
       itemId: item.id,
     };
+  }
+
+  /**
+   * Attaches tag names to an item, creating any tag that doesn't exist yet.
+   *
+   * Get-or-create mirrors `TagsService.create`: insert with
+   * `onConflictDoNothing`, then read back whatever is there. That covers both
+   * the tag another job created a moment ago and a genuine race between two
+   * workers importing under the same new tag. The `item_tags` insert is
+   * likewise conflict-tolerant, so replaying a job re-attaches harmlessly.
+   */
+  private async applyTags(
+    db: Database,
+    itemId: number,
+    rawNames: string[] | null,
+  ) {
+    // Normalized here rather than at the caller because the two paths in have
+    // different histories: a queued job's tags were normalized by `enqueue`
+    // before they were stored, but `ingest()` runs synchronously and never
+    // touches that code. Doing it at the choke point means no un-normalized
+    // name can reach the table either way, and re-normalizing is a no-op.
+    const names = normalizeTagNames(rawNames);
+    if (!names?.length) {
+      return;
+    }
+
+    await db
+      .insert(tagsTable)
+      .values(names.map((name) => ({ name })))
+      .onConflictDoNothing({ target: tagsTable.name });
+
+    const rows = await db
+      .select({ id: tagsTable.id })
+      .from(tagsTable)
+      .where(inArray(tagsTable.name, names));
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    await db
+      .insert(itemTagsTable)
+      .values(rows.map((row) => ({ itemId, tagId: row.id })))
+      .onConflictDoNothing();
   }
 
   private async processExtractionAssets(

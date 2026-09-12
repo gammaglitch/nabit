@@ -69,6 +69,30 @@ export async function requestHostPermission(url: URL): Promise<boolean> {
   return browser.permissions.request({ origins: [`${url.origin}/*`] });
 }
 
+const importTagItem = storage.defineItem<string>("local:importTag", {
+  fallback: "",
+});
+
+export async function getImportTag(): Promise<string> {
+  return (await importTagItem.getValue()).trim();
+}
+
+export async function setImportTag(tag: string): Promise<void> {
+  await importTagItem.setValue(tag.trim());
+}
+
+/**
+ * Splits the tag field into names for the API. Comma-separated so one field
+ * can carry a couple of tags; the server lowercases, trims and caps them, so
+ * this only has to drop the empties a trailing comma leaves behind.
+ */
+export function parseImportTags(value: string): string[] {
+  return value
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0);
+}
+
 const hnUsernameItem = storage.defineItem<string>("local:hnUsername", {
   fallback: "",
 });

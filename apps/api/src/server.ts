@@ -29,6 +29,9 @@ type IngestBody = {
   url: string;
   payload?: unknown;
   ingestor?: "tweet" | "reddit" | "hacker_news" | "generic" | null;
+  // Tag names applied when the item lands. The service normalizes and bounds
+  // them, so an unvalidated REST body can't widen what reaches the table.
+  tags?: string[] | null;
 };
 
 type ExportListQuerystring = {
@@ -169,13 +172,14 @@ export async function buildApp() {
     const result = await app.services.ingest.enqueue({
       ingestor: body.ingestor ?? null,
       payload: body.payload,
+      tags: body.tags ?? null,
       url: body.url,
     });
 
     return reply.status(202).send(result);
   });
 
-  app.post<{ Body: { items: IngestBody[] } }>(
+  app.post<{ Body: { items: IngestBody[]; tags?: string[] | null } }>(
     "/ingest/batch",
     async (req, reply) => {
       if (!req.user) {
@@ -193,6 +197,9 @@ export async function buildApp() {
         const result = await app.services.ingest.enqueue({
           ingestor: item.ingestor ?? null,
           payload: item.payload,
+          // Batch-level tags apply to every item, on top of its own — a bulk
+          // import sends one tag, not one per entry.
+          tags: [...(item.tags ?? []), ...(req.body?.tags ?? [])],
           url: item.url,
         });
         results.push(result);

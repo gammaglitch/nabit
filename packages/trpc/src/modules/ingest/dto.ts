@@ -25,6 +25,12 @@ export const IngestItem = z.object({
   // rather than defaulted here so the one default lives in the service and
   // covers the REST paths too, which never pass through this schema.
   digestOptIn: z.boolean().optional(),
+  // Tag names to apply once the item lands. Names rather than ids so headless
+  // clients don't need a lookup round-trip; the service normalizes them the
+  // same way `tags.create` does and creates any that are new. Bounds are
+  // enforced in the service so the REST paths, which skip this schema, get
+  // them too.
+  tags: z.array(z.string()).optional(),
 });
 
 export const IngestInput = IngestItem;
@@ -53,6 +59,9 @@ export const IngestOutput: z.ZodType<IngestOutputShape> =
 
 export const IngestBatchInput = z.object({
   items: z.array(IngestItem).min(1).max(500),
+  // Applied to every item in the batch, on top of any the item carries itself.
+  // Saves a bulk import repeating the same tag on several hundred entries.
+  tags: z.array(z.string()).optional(),
 });
 
 export const IngestBatchOutput = z.object({

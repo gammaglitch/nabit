@@ -6,12 +6,15 @@ import {
   getApiUrl,
   getHnFavoritesCache,
   getHnUsername,
+  getImportTag,
   parseApiUrl,
+  parseImportTags,
   requestHackerNewsPermission,
   requestHostPermission,
   setApiToken,
   setApiUrl,
   setHnUsername,
+  setImportTag,
 } from "@/lib/config";
 import type { HnFavorite, HnFavoriteKind } from "@/lib/hn-favorites";
 import { sendHnFavoritesMessage, sendIngestMessage } from "@/lib/messages";
@@ -55,9 +58,14 @@ export default function App() {
   const [fetchedAt, setFetchedAt] = useState<number | null>(null);
   const [fetching, setFetching] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [tagField, setTagField] = useState("");
   const [status, setStatus] = useState<Status>(null);
   const [sending, setSending] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+
+  useEffect(() => {
+    getImportTag().then(setTagField);
+  }, []);
 
   useEffect(() => {
     setSelected(new Set());
@@ -217,8 +225,13 @@ export default function App() {
       );
     }
 
+    const tags = parseImportTags(tagField);
+
     try {
-      const reply = await sendIngestMessage(items);
+      // Remembered so the next bulk import defaults to the same tag rather
+      // than silently sending untagged.
+      await setImportTag(tagField);
+      const reply = await sendIngestMessage(items, tags);
 
       if (!reply.ok) {
         setStatus({ message: reply.error, error: true });
@@ -226,8 +239,9 @@ export default function App() {
       }
 
       const queued = reply.result.results.filter((r) => !r.reused).length;
+      const tagged = tags.length > 0 ? ` as ${tags.join(", ")}` : "";
       setStatus({
-        message: `${queued} queued, ${reply.result.results.length - queued} already in flight`,
+        message: `${queued} queued${tagged}, ${reply.result.results.length - queued} already in flight`,
         error: false,
       });
       setSelected(new Set());
@@ -367,6 +381,21 @@ export default function App() {
           [{status.error ? "ERROR" : "OK"}] {status.message}
         </div>
       )}
+
+      {/* Tag applied to whatever this send queues, in every view */}
+      <label style={styles.tagRow}>
+        <span style={styles.fieldLabel}>TAG</span>
+        <input
+          type="text"
+          value={tagField}
+          onChange={(e) => setTagField(e.target.value)}
+          placeholder="optional, comma-separated"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          style={{ ...styles.input, flex: 1, minWidth: 0 }}
+        />
+      </label>
 
       {/* Actions */}
       <div style={styles.actions}>
@@ -647,6 +676,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     letterSpacing: "0.04em",
     padding: "8px 16px",
+  },
+  tagRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 16px 0",
   },
   actions: {
     display: "flex",

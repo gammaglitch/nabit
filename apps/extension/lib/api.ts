@@ -8,6 +8,13 @@ export interface IngestItem {
   ingestor?: "tweet" | "reddit" | "hacker_news" | "generic";
 }
 
+/**
+ * Tag names applied to everything in the batch. Sent at the batch level rather
+ * than repeated on each item, and resolved server-side — the API creates any
+ * tag that doesn't exist, so the extension needs no tag lookup of its own.
+ */
+export type IngestTags = string[];
+
 interface IngestJob {
   id: number;
   status: "queued" | "processing" | "success" | "failed";
@@ -34,6 +41,7 @@ async function postChunk(
   apiUrl: string,
   token: string,
   items: IngestItem[],
+  tags: IngestTags,
 ): Promise<BatchResult> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -44,7 +52,7 @@ async function postChunk(
   }
 
   const response = await fetch(`${apiUrl}/ingest/batch`, {
-    body: JSON.stringify({ items }),
+    body: JSON.stringify(tags.length > 0 ? { items, tags } : { items }),
     headers,
     method: "POST",
   });
@@ -69,7 +77,10 @@ async function postChunk(
  * reaches it via `sendIngestMessage()` so a closing popup can't kill the
  * request mid-flight.
  */
-export async function ingestBatch(items: IngestItem[]): Promise<BatchResult> {
+export async function ingestBatch(
+  items: IngestItem[],
+  tags: IngestTags = [],
+): Promise<BatchResult> {
   const apiUrl = await getApiUrl();
   const token = await getApiToken();
   const results: BatchResult["results"] = [];
@@ -79,6 +90,7 @@ export async function ingestBatch(items: IngestItem[]): Promise<BatchResult> {
       apiUrl,
       token,
       items.slice(start, start + BATCH_CHUNK_SIZE),
+      tags,
     );
     results.push(...chunk.results);
   }
