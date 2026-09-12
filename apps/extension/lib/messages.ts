@@ -26,13 +26,36 @@ export function isIngestMessage(value: unknown): value is IngestMessage {
   );
 }
 
+/**
+ * `browser.runtime.sendMessage` resolves `undefined` when no listener answered.
+ * In practice that means the background worker is running older code than the
+ * popup — the shape a stale `wxt dev` build takes, since the two are bundled
+ * separately and the worker only picks up changes when the extension reloads.
+ *
+ * Left unchecked it surfaces at the call site as `Cannot read properties of
+ * undefined (reading 'ok')`, which says nothing about the actual cause. Name it
+ * instead.
+ */
+function requireReply<T>(reply: T | undefined, what: string): T {
+  if (reply === undefined) {
+    throw new Error(
+      `No response from the background worker (${what}) — reload the extension`,
+    );
+  }
+
+  return reply;
+}
+
 /** Hands a batch to the background worker and waits for its verdict. */
 export async function sendIngestMessage(
   items: IngestItem[],
   tags: IngestTags = [],
 ): Promise<IngestReply> {
   const message: IngestMessage = { items, tags, type: INGEST_MESSAGE };
-  return (await browser.runtime.sendMessage(message)) as IngestReply;
+  return requireReply(
+    (await browser.runtime.sendMessage(message)) as IngestReply | undefined,
+    INGEST_MESSAGE,
+  );
 }
 
 export const HN_FAVORITES_MESSAGE = "nabit:hn-favorites";
@@ -77,5 +100,10 @@ export async function sendHnFavoritesMessage(
     type: HN_FAVORITES_MESSAGE,
     username,
   };
-  return (await browser.runtime.sendMessage(message)) as HnFavoritesReply;
+  return requireReply(
+    (await browser.runtime.sendMessage(message)) as
+      | HnFavoritesReply
+      | undefined,
+    HN_FAVORITES_MESSAGE,
+  );
 }
