@@ -106,6 +106,16 @@ export const ListIngestJobsInput = z
   .optional();
 
 export const ListIngestJobsOutput = z.object({
+  // Whole-table totals, not a count of `jobs` — the list is a bounded window
+  // and the queue behind it can be far deeper.
+  counts: z.object({
+    failed: z.number().int(),
+    processing: z.number().int(),
+    queued: z.number().int(),
+    success: z.number().int(),
+  }),
+  // Active jobs oldest-first (the front of the queue), then finished jobs
+  // newest-first. See `IngestService.listJobs`.
   jobs: z.array(IngestJobOutput),
 });
 

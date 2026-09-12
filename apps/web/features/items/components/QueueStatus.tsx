@@ -62,18 +62,33 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
       refetchInterval: (query) => {
         const data = query.state.data;
         if (!data) return 2500;
-        const hasActive = data.jobs.some(
-          (job) => job.status === "queued" || job.status === "processing",
-        );
+        // Counts, not the visible slice: a backlog deeper than the window is
+        // exactly when we most want to keep polling. Optional because web and
+        // API deploy as separate containers — an API still serving the old
+        // shape would otherwise crash the interval callback.
+        const hasActive = data.counts
+          ? data.counts.queued + data.counts.processing > 0
+          : data.jobs.some(
+              (job) => job.status === "queued" || job.status === "processing",
+            );
         return hasActive ? 2500 : 30_000;
       },
     },
   );
 
   const jobs = jobsQuery.data?.jobs ?? [];
+  // `working` is the visible slice — the front of the queue. `activeCount` is
+  // how deep the queue actually is, which is the number worth showing: a bulk
+  // import can be hundreds, and counting the slice would just pin the badge at
+  // the window size while the worker drained the far end out of sight.
+  const counts = jobsQuery.data?.counts;
   const working = jobs.filter(
     (job) => job.status === "queued" || job.status === "processing",
   );
+  const activeCount = counts
+    ? counts.queued + counts.processing
+    : working.length;
+  const hiddenActive = Math.max(0, activeCount - working.length);
   const failed = jobs.filter((job) => job.status === "failed");
   const recent = jobs.filter((job) => job.status === "success").slice(0, 5);
 
@@ -110,7 +125,7 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
     return null;
   }
 
-  const idle = working.length === 0 && failed.length === 0;
+  const idle = activeCount === 0 && failed.length === 0;
 
   return (
     <>
@@ -156,7 +171,7 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
         <span>
           {idle
             ? "queue idle"
-            : `${working.length} active · ${failed.length} failed`}
+            : `${activeCount} active · ${failed.length} failed`}
         </span>
       </button>
 
@@ -208,7 +223,7 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
                 Queue
               </div>
             </div>
-            <QueueStat label="active" value={working.length} />
+            <QueueStat label="active" value={activeCount} />
             <QueueStat
               label="failed"
               value={failed.length}
@@ -234,6 +249,9 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
               {grouped.working.map((job, index) => (
                 <QueueRow key={job.id} job={job} position={index + 1} />
               ))}
+              {hiddenActive > 0 && (
+                <div style={moreStyle}>+ {hiddenActive} more waiting</div>
+              )}
             </QueueSection>
           )}
 
@@ -436,6 +454,14 @@ const buttonStyle = {
   letterSpacing: "0.08em",
   padding: "9px 14px",
   textTransform: "uppercase" as const,
+};
+
+const moreStyle = {
+  borderBottom: "1px solid var(--rule-soft)",
+  color: "var(--ink-3)",
+  fontFamily: "var(--mono-font)",
+  fontSize: 11,
+  padding: "11px 20px",
 };
 
 const messageStyle = {

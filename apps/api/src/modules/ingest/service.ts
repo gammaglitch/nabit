@@ -439,16 +439,57 @@ export class IngestService implements IngestServiceContract {
     return toJob(job);
   }
 
+  /**
+   * Two windows plus a count, because the queue panel asks three different
+   * questions and one `order by created_at desc limit N` answers none of them
+   * well.
+   *
+   * A newest-first window is the wrong end of the queue: the worker claims
+   * oldest-first, so with a backlog larger than the window every job on screen
+   * stays `queued` while completions happen out of sight. `active` is
+   * therefore ordered oldest-first — the jobs about to run — and `finished`
+   * newest-first, which is what "recently nabbed" means.
+   *
+   * `counts` is over the whole table so the caller can report real queue depth
+   * instead of however much fits in the window.
+   */
   async listJobs(input: { limit?: number } = {}) {
     const db = requireDatabase(this.database);
-    const jobs = await db
-      .select()
+    const limit = input.limit ?? 50;
+
+    const countRows = await db
+      .select({
+        count: sql<number>`count(*)::int`,
+        status: ingestJobsTable.status,
+      })
       .from(ingestJobsTable)
-      .orderBy(desc(ingestJobsTable.createdAt))
-      .limit(input.limit ?? 50);
+      .groupBy(ingestJobsTable.status);
+
+    const byStatus = new Map(countRows.map((row) => [row.status, row.count]));
+
+    const [active, finished] = await Promise.all([
+      db
+        .select()
+        .from(ingestJobsTable)
+        .where(inArray(ingestJobsTable.status, ["queued", "processing"]))
+        .orderBy(ingestJobsTable.createdAt)
+        .limit(limit),
+      db
+        .select()
+        .from(ingestJobsTable)
+        .where(inArray(ingestJobsTable.status, ["success", "failed"]))
+        .orderBy(desc(ingestJobsTable.createdAt))
+        .limit(limit),
+    ]);
 
     return {
-      jobs: jobs.map(toJob),
+      counts: {
+        failed: byStatus.get("failed") ?? 0,
+        processing: byStatus.get("processing") ?? 0,
+        queued: byStatus.get("queued") ?? 0,
+        success: byStatus.get("success") ?? 0,
+      },
+      jobs: [...active, ...finished].map(toJob),
     };
   }
 
