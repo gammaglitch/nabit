@@ -237,6 +237,11 @@ export const ingestJobsTable = schema.table(
     // ensureItem applies it on insert only. Defaults false so the headless
     // ingest paths (REST, extension, Discord bot, userscript) never enroll.
     digestOptIn: t.boolean("digest_opt_in").notNull().default(false),
+    // Tag names to apply once the item lands. Names rather than ids because
+    // the headless clients that set this — extension, userscripts, bot — have
+    // no way to look up an id; ensureItem creates any tag that doesn't exist
+    // yet. Null for every job queued without tags, which is most of them.
+    tags: t.jsonb("tags").$type<string[]>(),
     // Set only for jobs a crawl queued. Their presence is what tells
     // processNextJob to hand the page's outbound links to CrawlService.expand
     // once the ingest lands; an ordinary ingest has both null and expands

@@ -20,6 +20,15 @@ from across the web — articles, Hacker News threads, Reddit threads, tweets.
   intercepts X's own bookmark API responses while you scroll through
   your bookmarks and forwards them to the ingest endpoint in batches.
   No polling, no API key, no "export your data" ritual.
+- **Bulk Hacker News favorites import.** The browser extension takes your
+  HN username, walks every page of `favorites?id=<you>` — submissions or
+  comments — and queues each thread. Re-run it whenever: items are keyed by
+  their HN id, so a repeat import refreshes the existing archive rather than
+  duplicating it. Since each favorite is queued as its HN thread, the
+  ingestor archives the discussion *and*, where the submission links
+  off-site, the article it points at, filed as the thread's child. Give the
+  import a tag and everything it queues — threads and their articles — lands
+  under it.
 - **Purpose-built ingestors per source.** HN, Reddit, and tweet
   extractors pull structured metadata (points, score, subreddit, author,
   timestamps) plus the full comment tree — not just the raw HTML

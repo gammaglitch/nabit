@@ -1,11 +1,19 @@
 import type { Browser } from "wxt/browser";
 import { getApiToken, getApiUrl } from "./config";
+import type { HnFavorite } from "./hn-favorites";
 
 export interface IngestItem {
   url: string;
   payload?: unknown;
   ingestor?: "tweet" | "reddit" | "hacker_news" | "generic";
 }
+
+/**
+ * Tag names applied to everything in the batch. Sent at the batch level rather
+ * than repeated on each item, and resolved server-side — the API creates any
+ * tag that doesn't exist, so the extension needs no tag lookup of its own.
+ */
+export type IngestTags = string[];
 
 interface IngestJob {
   id: number;
@@ -23,14 +31,18 @@ export interface BatchResult {
 }
 
 /**
- * Posts a batch to the ingest API. Runs in the background worker — the popup
- * reaches it via `sendIngestMessage()` so a closing popup can't kill the
- * request mid-flight.
+ * `/ingest/batch` enqueues its items one at a time inside the request, so a
+ * whole favorites list would hang on a single long-running POST. Split it into
+ * chunks the server can answer promptly.
  */
-export async function ingestBatch(items: IngestItem[]): Promise<BatchResult> {
-  const apiUrl = await getApiUrl();
-  const token = await getApiToken();
+const BATCH_CHUNK_SIZE = 50;
 
+async function postChunk(
+  apiUrl: string,
+  token: string,
+  items: IngestItem[],
+  tags: IngestTags,
+): Promise<BatchResult> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -40,7 +52,7 @@ export async function ingestBatch(items: IngestItem[]): Promise<BatchResult> {
   }
 
   const response = await fetch(`${apiUrl}/ingest/batch`, {
-    body: JSON.stringify({ items }),
+    body: JSON.stringify(tags.length > 0 ? { items, tags } : { items }),
     headers,
     method: "POST",
   });
@@ -58,6 +70,32 @@ export async function ingestBatch(items: IngestItem[]): Promise<BatchResult> {
   }
 
   return response.json();
+}
+
+/**
+ * Posts a batch to the ingest API. Runs in the background worker — the popup
+ * reaches it via `sendIngestMessage()` so a closing popup can't kill the
+ * request mid-flight.
+ */
+export async function ingestBatch(
+  items: IngestItem[],
+  tags: IngestTags = [],
+): Promise<BatchResult> {
+  const apiUrl = await getApiUrl();
+  const token = await getApiToken();
+  const results: BatchResult["results"] = [];
+
+  for (let start = 0; start < items.length; start += BATCH_CHUNK_SIZE) {
+    const chunk = await postChunk(
+      apiUrl,
+      token,
+      items.slice(start, start + BATCH_CHUNK_SIZE),
+      tags,
+    );
+    results.push(...chunk.results);
+  }
+
+  return { results };
 }
 
 /**
@@ -104,6 +142,32 @@ export function tabsToItems(tabs: Browser.tabs.Tab[]): IngestItem[] {
       },
       url: tab.url,
     }));
+}
+
+/**
+ * Favorites are sent as their Hacker News thread URLs, which `resolveIngestorName`
+ * maps to the `hacker_news` ingestor — it pulls the thread from Algolia and
+ * ingests a submission's outbound link as a child item, so the article comes
+ * along for free. The payload is provenance only; that ingestor fetches its own
+ * content and ignores it.
+ */
+export function hnFavoritesToItems(
+  favorites: HnFavorite[],
+  username: string,
+): IngestItem[] {
+  return favorites.map((favorite) => ({
+    payload: {
+      by: favorite.by,
+      context: favorite.context,
+      createdAt: favorite.createdAt,
+      favoritedBy: username,
+      id: favorite.id,
+      kind: favorite.kind,
+      title: favorite.title,
+      url: favorite.url,
+    },
+    url: favorite.url,
+  }));
 }
 
 export function bookmarksToItems(

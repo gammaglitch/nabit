@@ -1,0 +1,1 @@
+ALTER TABLE "nabit"."ingest_jobs" ADD COLUMN "tags" jsonb;

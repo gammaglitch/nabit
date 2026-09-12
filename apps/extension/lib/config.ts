@@ -1,3 +1,9 @@
+import {
+  HN_HOST_PERMISSION,
+  type HnFavorite,
+  type HnFavoriteKind,
+} from "./hn-favorites";
+
 /** Strips trailing slashes so callers can append paths safely. */
 export function normalizeApiUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
@@ -61,4 +67,79 @@ export async function setApiToken(token: string): Promise<void> {
  */
 export async function requestHostPermission(url: URL): Promise<boolean> {
   return browser.permissions.request({ origins: [`${url.origin}/*`] });
+}
+
+const importTagItem = storage.defineItem<string>("local:importTag", {
+  fallback: "",
+});
+
+export async function getImportTag(): Promise<string> {
+  return (await importTagItem.getValue()).trim();
+}
+
+export async function setImportTag(tag: string): Promise<void> {
+  await importTagItem.setValue(tag.trim());
+}
+
+/**
+ * Splits the tag field into names for the API. Comma-separated so one field
+ * can carry a couple of tags; the server lowercases, trims and caps them, so
+ * this only has to drop the empties a trailing comma leaves behind.
+ */
+export function parseImportTags(value: string): string[] {
+  return value
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0);
+}
+
+const hnUsernameItem = storage.defineItem<string>("local:hnUsername", {
+  fallback: "",
+});
+
+export async function getHnUsername(): Promise<string> {
+  return (await hnUsernameItem.getValue()).trim();
+}
+
+export async function setHnUsername(username: string): Promise<void> {
+  await hnUsernameItem.setValue(username.trim());
+}
+
+/**
+ * news.ycombinator.com is deliberately *not* in the manifest — baking it into
+ * `host_permissions` would put a scary install-time warning in front of every
+ * user for a feature most never touch. It's covered by
+ * `optional_host_permissions` instead and requested on the first import;
+ * afterwards this resolves true without prompting again.
+ */
+export async function requestHackerNewsPermission(): Promise<boolean> {
+  return browser.permissions.request({ origins: [HN_HOST_PERMISSION] });
+}
+
+export interface HnFavoritesCache {
+  favorites: HnFavorite[];
+  fetchedAt: number;
+  kind: HnFavoriteKind;
+  username: string;
+}
+
+/**
+ * The last list fetched. A popup closes the moment anything outside it is
+ * clicked, which would otherwise throw away a multi-page walk the user waited
+ * on — the background worker keeps going and stores the result here, so
+ * reopening the popup finds it ready to send.
+ */
+const hnFavoritesItem = storage.defineItem<HnFavoritesCache | null>(
+  "local:hnFavorites",
+  { fallback: null },
+);
+
+export async function getHnFavoritesCache(): Promise<HnFavoritesCache | null> {
+  return hnFavoritesItem.getValue();
+}
+
+export async function setHnFavoritesCache(
+  cache: HnFavoritesCache,
+): Promise<void> {
+  await hnFavoritesItem.setValue(cache);
 }

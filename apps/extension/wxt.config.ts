@@ -36,10 +36,14 @@ export default defineConfig({
 
     return {
       name: "Nabit",
-      description: "Send tabs and bookmarks to your archival API.",
+      description:
+        "Send tabs, bookmarks and Hacker News favorites to your archival API.",
       permissions: ["tabs", "bookmarks", "storage"],
       // The dev default plus whatever `.env` targets. Any other API host is
-      // requested at runtime when it's saved in the popup's config panel.
+      // requested at runtime when it's saved in the popup's config panel, as
+      // is news.ycombinator.com on the first favorites import — keeping it out
+      // of the manifest spares every user an install-time warning for a
+      // feature most never touch.
       host_permissions: [
         LOCAL_API_HOST,
         ...(envHost && envHost !== LOCAL_API_HOST ? [envHost] : []),

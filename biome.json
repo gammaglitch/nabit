@@ -8,6 +8,7 @@
       "!**/.next/**",
       "!**/.turbo/**",
       "!**/.wxt/**",
+      "!**/test/fixtures/**",
       "!**/coverage/**",
       "!**/src-tauri/gen/**",
       "!**/src-tauri/target/**",
