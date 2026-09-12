@@ -230,6 +230,14 @@ export const DeleteOutput = z.object({
   deleted: z.boolean(),
 });
 
+export const DeleteManyInput = z.object({
+  ids: z.array(z.number()).min(1).max(500),
+});
+
+export const DeleteManyOutput = z.object({
+  deleted: z.number(),
+});
+
 export const GetItemInput = z.object({
   id: z.number(),
 });
@@ -274,6 +282,8 @@ export type CommentOutputDTO = z.infer<typeof CommentOutput>;
 export type ItemDetailOutputDTO = z.infer<typeof ItemDetailOutput>;
 export type DeleteInputDTO = z.infer<typeof DeleteInput>;
 export type DeleteOutputDTO = z.infer<typeof DeleteOutput>;
+export type DeleteManyInputDTO = z.infer<typeof DeleteManyInput>;
+export type DeleteManyOutputDTO = z.infer<typeof DeleteManyOutput>;
 export type GetItemInputDTO = z.infer<typeof GetItemInput>;
 export type ReextractInputDTO = z.infer<typeof ReextractInput>;
 export type ReextractOutputDTO = z.infer<typeof ReextractOutput>;

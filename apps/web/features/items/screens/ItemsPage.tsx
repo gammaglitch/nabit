@@ -7,6 +7,8 @@ import { useStarred } from "@/features/shared/hooks/useStarred";
 import { trpc } from "@/lib/trpc/react";
 import { StartCrawlModal } from "@/features/sites/components/StartCrawlModal";
 import { useCrawlList } from "@/features/sites/hooks/useCrawls";
+import { BulkActionBar } from "../components/BulkActionBar";
+import { BulkTagPicker } from "../components/BulkTagPicker";
 import { CaptureModal } from "../components/CaptureModal";
 import { CompactRow } from "../components/CompactRow";
 import { LibrarySidebar } from "../components/LibrarySidebar";
@@ -16,6 +18,8 @@ import { QueueStatus } from "../components/QueueStatus";
 import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
 import { SplitRow } from "../components/SplitRow";
 import { TagPicker, type TagPickerAnchor } from "../components/TagPicker";
+import { useBulkActions } from "../hooks/useBulkActions";
+import { useBulkSelection } from "../hooks/useBulkSelection";
 import { useTagOperations } from "../hooks/useTagOperations";
 import {
   type DisplayItem,
@@ -45,6 +49,7 @@ export default function ItemsPage() {
   // Set when the capture palette hands its URL over to the crawler.
   const [crawlSeedUrl, setCrawlSeedUrl] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
+  const [bulkTagOpen, setBulkTagOpen] = useState(false);
   const [tagPicker, setTagPicker] = useState<{
     itemId: number;
     anchor: TagPickerAnchor;
@@ -158,6 +163,38 @@ export default function ItemsPage() {
     isStarred,
   ]);
 
+  const visibleIds = useMemo(() => filtered.map((i) => i.id), [filtered]);
+  const selection = useBulkSelection(visibleIds);
+  const bulk = useBulkActions();
+
+  // Select mode always shows the dense rows — they are the view a batch is
+  // actually picked in. `layout` itself is left alone rather than forced to
+  // "compact", so the chosen view survives the mode (and does not get written
+  // over the persisted preference below).
+  const effectiveLayout: Layout = selection.active ? "compact" : layout;
+
+  const { active: selectionActive, exit: exitSelection } = selection;
+  // Escape leaves select mode. Registered apart from the shortcuts above so it
+  // can depend on the current mode without re-binding those on every change.
+  // Depends on the two fields rather than the hook's return object, which is a
+  // fresh object every render and would rebind the listener each time.
+  useEffect(() => {
+    if (!selectionActive) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      exitSelection();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectionActive, exitSelection]);
+
+  // A picker left open behind a closing mode would apply a tag to a selection
+  // that no longer exists.
+  useEffect(() => {
+    if (!selectionActive) setBulkTagOpen(false);
+  }, [selectionActive]);
+
   const counts = useMemo(
     () => ({
       all: displayItems.length,
@@ -183,18 +220,18 @@ export default function ItemsPage() {
   }, [displayItems]);
 
   const selectedPreviewItem: DisplayItem | null = useMemo(() => {
-    if (layout !== "split") return null;
+    if (effectiveLayout !== "split") return null;
     return filtered.find((i) => i.id === previewId) ?? filtered[0] ?? null;
-  }, [layout, filtered, previewId]);
+  }, [effectiveLayout, filtered, previewId]);
 
   const previewDetailQuery = trpc.ingest.get.useQuery(
     { id: selectedPreviewItem?.id ?? 0 },
-    { enabled: selectedPreviewItem !== null && layout === "split" },
+    { enabled: selectedPreviewItem !== null && effectiveLayout === "split" },
   );
 
   // Arrow-key navigation in split mode
   useEffect(() => {
-    if (layout !== "split") return;
+    if (effectiveLayout !== "split") return;
     const onKey = (e: KeyboardEvent) => {
       if (
         document.activeElement instanceof HTMLInputElement ||
@@ -223,7 +260,7 @@ export default function ItemsPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [layout, filtered, selectedPreviewItem, router]);
+  }, [effectiveLayout, filtered, selectedPreviewItem, router]);
 
   const onOpen = useCallback(
     (item: DisplayItem) => router.push(`/read/${item.id}`),
@@ -438,45 +475,89 @@ export default function ItemsPage() {
               )}
             </span>
           </div>
-          <div
+          {selection.active ? (
+            <BulkActionBar
+              allSelected={
+                filtered.length > 0 &&
+                selection.selectedIds.length === filtered.length
+              }
+              busy={bulk.isDeleting || bulk.isTagging}
+              count={selection.selectedIds.length}
+              onClear={selection.clear}
+              onDelete={async () => {
+                await bulk.deleteMany(selection.selectedIds);
+                selection.clear();
+              }}
+              onSelectAll={selection.selectAll}
+              onTag={() => setBulkTagOpen(true)}
+            />
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                gap: 0,
+                border: "1px solid var(--rule)",
+              }}
+            >
+              {(
+                [
+                  { id: "list", label: "LIST", title: "Default list" },
+                  { id: "split", label: "SPLIT", title: "List + preview" },
+                  { id: "compact", label: "DENSE", title: "One-line rows" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  type="button"
+                  key={opt.id}
+                  onClick={() => {
+                    setLayout(opt.id);
+                    if (opt.id === "split" && !previewId && filtered[0])
+                      setPreviewId(filtered[0].id);
+                  }}
+                  title={opt.title}
+                  style={{
+                    padding: "4px 10px",
+                    fontFamily: "var(--mono-font)",
+                    fontSize: 10,
+                    letterSpacing: "0.08em",
+                    background:
+                      layout === opt.id ? "var(--ink)" : "transparent",
+                    color: layout === opt.id ? "var(--bg)" : "var(--ink-2)",
+                    lineHeight: 1,
+                    borderRight: "1px solid var(--rule)",
+                    border: 0,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={selection.toggleMode}
+            title={
+              selection.active
+                ? "Leave select mode"
+                : "Select several items to tag or delete at once"
+            }
             style={{
-              display: "flex",
-              gap: 0,
-              border: "1px solid var(--rule)",
+              padding: "4px 10px",
+              fontFamily: "var(--mono-font)",
+              fontSize: 10,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              lineHeight: 1,
+              border: "1px solid",
+              borderColor: selection.active ? "var(--ink)" : "var(--rule)",
+              background: selection.active ? "var(--ink)" : "transparent",
+              color: selection.active ? "var(--bg)" : "var(--ink-2)",
+              whiteSpace: "nowrap",
             }}
           >
-            {(
-              [
-                { id: "list", label: "LIST", title: "Default list" },
-                { id: "split", label: "SPLIT", title: "List + preview" },
-                { id: "compact", label: "DENSE", title: "One-line rows" },
-              ] as const
-            ).map((opt) => (
-              <button
-                type="button"
-                key={opt.id}
-                onClick={() => {
-                  setLayout(opt.id);
-                  if (opt.id === "split" && !previewId && filtered[0])
-                    setPreviewId(filtered[0].id);
-                }}
-                title={opt.title}
-                style={{
-                  padding: "4px 10px",
-                  fontFamily: "var(--mono-font)",
-                  fontSize: 10,
-                  letterSpacing: "0.08em",
-                  background: layout === opt.id ? "var(--ink)" : "transparent",
-                  color: layout === opt.id ? "var(--bg)" : "var(--ink-2)",
-                  lineHeight: 1,
-                  borderRight: "1px solid var(--rule)",
-                  border: 0,
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+            {selection.active ? "Done" : "Select"}
+          </button>
           <div style={{ display: "flex", gap: 6 }}>
             {(["recent", "oldest", "title"] as const).map((s) => (
               <button
@@ -531,7 +612,7 @@ export default function ItemsPage() {
           </div>
         )}
 
-        {listQuery.data && layout === "list" && (
+        {listQuery.data && effectiveLayout === "list" && (
           <>
             <div
               style={{
@@ -573,7 +654,7 @@ export default function ItemsPage() {
           </>
         )}
 
-        {listQuery.data && layout === "compact" && (
+        {listQuery.data && effectiveLayout === "compact" && (
           <div style={{ flex: 1, overflow: "auto" }}>
             {filtered.length === 0 && <EmptyState />}
             {filtered.map((item) => (
@@ -585,12 +666,15 @@ export default function ItemsPage() {
                 onToggleStar={() => toggleStarred(item.id)}
                 onRemoveTag={(tagId) => onRemoveTagFromItem(item.id, tagId)}
                 renderTitle={renderTitle}
+                selectable={selection.active}
+                selected={selection.isSelected(item.id)}
+                onToggleSelect={(extend) => selection.toggle(item.id, extend)}
               />
             ))}
           </div>
         )}
 
-        {listQuery.data && layout === "split" && (
+        {listQuery.data && effectiveLayout === "split" && (
           <div
             style={{
               display: "grid",
@@ -654,6 +738,17 @@ export default function ItemsPage() {
           onRemoveTag={(id, tagId) => onRemoveTagFromItem(id, tagId)}
           onClose={() => setTagPicker(null)}
           anchor={tagPicker.anchor}
+        />
+      )}
+
+      {bulkTagOpen && (
+        <BulkTagPicker
+          allTags={allTagsObjects}
+          count={selection.selectedIds.length}
+          onApply={async (name) => {
+            await bulk.tagMany(selection.selectedIds, name, allTagsObjects);
+          }}
+          onClose={() => setBulkTagOpen(false)}
         />
       )}
 

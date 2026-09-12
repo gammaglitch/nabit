@@ -1,17 +1,25 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import ItemsRoute from "@/app/items/page";
 
-const { invalidateList, invalidateGet, invalidateTagsList, mutateEnqueue } =
-  vi.hoisted(() => ({
-    invalidateList: vi.fn(),
-    invalidateGet: vi.fn(),
-    invalidateTagsList: vi.fn(),
-    mutateEnqueue: vi.fn(),
-  }));
+const {
+  deletedIds,
+  routerPush,
+  invalidateList,
+  invalidateGet,
+  invalidateTagsList,
+  mutateEnqueue,
+} = vi.hoisted(() => ({
+  deletedIds: [] as number[],
+  routerPush: vi.fn(),
+  invalidateList: vi.fn(),
+  invalidateGet: vi.fn(),
+  invalidateTagsList: vi.fn(),
+  mutateEnqueue: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: routerPush, replace: vi.fn() }),
 }));
 
 vi.mock("@/lib/trpc/react", () => {
@@ -25,9 +33,13 @@ vi.mock("@/lib/trpc/react", () => {
       useUtils() {
         return {
           ingest: {
-            get: { invalidate: invalidateGet },
+            get: { invalidate: invalidateGet, reset: vi.fn() },
             jobs: { invalidate: vi.fn() },
             list: { invalidate: invalidateList },
+          },
+          crawl: {
+            get: { invalidate: vi.fn() },
+            list: { invalidate: vi.fn() },
           },
           tags: { list: { invalidate: invalidateTagsList } },
         };
@@ -90,8 +102,26 @@ vi.mock("@/lib/trpc/react", () => {
                     tags: [{ id: 1, name: "javascript" }],
                     title: "Archiveable Story",
                   },
+                  {
+                    author: "echo",
+                    commentCount: 0,
+                    contentMarkdown: "Second body.",
+                    contentText: "Second body.",
+                    externalId: "https://example.com/second",
+                    id: 2,
+                    ingestedAt: "2026-04-05T10:00:00.000Z",
+                    latestExtractionStatus: "success",
+                    metadata: {},
+                    snapshotCount: 1,
+                    sourceCreatedAt: "2026-04-04T12:00:00.000Z",
+                    sourceType: "webpage",
+                    sourceUrl: "https://example.com/second",
+                    subjectItemId: null,
+                    tags: [],
+                    title: "Second Story",
+                  },
                 ],
-                total: 1,
+                total: 2,
               },
               error: null,
               isLoading: false,
@@ -107,6 +137,24 @@ vi.mock("@/lib/trpc/react", () => {
             };
           },
         },
+        delete: { useMutation: mutationStub },
+        deleteMany: {
+          useMutation: (opts?: {
+            onSuccess?: (
+              result: { deleted: number },
+              variables: { ids: number[] },
+            ) => unknown;
+          }) => ({
+            isPending: false,
+            mutate: vi.fn(),
+            mutateAsync: vi.fn(async (variables: { ids: number[] }) => {
+              const result = { deleted: variables.ids.length };
+              await opts?.onSuccess?.(result, variables);
+              deletedIds.push(...variables.ids);
+              return result;
+            }),
+          }),
+        },
       },
       tags: {
         list: {
@@ -119,6 +167,7 @@ vi.mock("@/lib/trpc/react", () => {
           },
         },
         addToItem: { useMutation: mutationStub },
+        addToItems: { useMutation: mutationStub },
         removeFromItem: { useMutation: mutationStub },
         create: { useMutation: mutationStub },
       },
@@ -140,5 +189,120 @@ describe("items page", () => {
     // Tag appears inline on the row and in the sidebar tag cloud.
     const tagMatches = screen.getAllByText("javascript");
     expect(tagMatches.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+/**
+ * Select mode is a modal state over the same list: while it is on, a click
+ * picks a row instead of opening it, and the view picker gives up its slot to
+ * the bulk actions. These cover the switches between those two worlds, since
+ * getting one wrong means either a lost click or an unreachable reader.
+ */
+describe("items page select mode", () => {
+  beforeEach(() => {
+    deletedIds.length = 0;
+    routerPush.mockClear();
+  });
+
+  const enterSelectMode = () => {
+    fireEvent.click(screen.getByRole("button", { name: "Select" }));
+  };
+
+  // The dense row is a <button>; the list row is a div[role=button], because
+  // it holds nested buttons of its own. Either is "the row" to a click.
+  const row = (title: string) => {
+    const el = screen.getByText(title).closest('button, [role="button"]');
+    if (!el) throw new Error(`no row element for ${title}`);
+    return el;
+  };
+
+  test("swaps the view picker for the bulk actions", () => {
+    render(<ItemsRoute />);
+
+    expect(screen.getByRole("button", { name: "LIST" })).toBeInTheDocument();
+
+    enterSelectMode();
+
+    expect(screen.queryByRole("button", { name: "LIST" })).toBeNull();
+    expect(screen.getByText("0 selected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+  });
+
+  test("a row click selects instead of opening the reader", () => {
+    render(<ItemsRoute />);
+    enterSelectMode();
+
+    fireEvent.click(row("Archiveable Story"));
+
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+  });
+
+  test("leaving select mode restores opening on click", () => {
+    render(<ItemsRoute />);
+    enterSelectMode();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    fireEvent.click(row("Archiveable Story"));
+
+    expect(routerPush).toHaveBeenCalledWith("/read/1");
+  });
+
+  test("escape leaves select mode and drops the selection", () => {
+    render(<ItemsRoute />);
+    enterSelectMode();
+    fireEvent.click(row("Archiveable Story"));
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(screen.getByRole("button", { name: "LIST" })).toBeInTheDocument();
+    expect(screen.queryByText("1 selected")).toBeNull();
+  });
+
+  test("shift-click takes the range between the two rows", () => {
+    render(<ItemsRoute />);
+    enterSelectMode();
+
+    fireEvent.click(row("Archiveable Story"));
+    fireEvent.click(row("Second Story"), { shiftKey: true });
+
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+  });
+
+  test("delete needs a second, count-bearing click before it fires", async () => {
+    render(<ItemsRoute />);
+    enterSelectMode();
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    // First click only arms it — nothing has been asked of the server yet.
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(deletedIds).toEqual([]);
+
+    const confirm = await screen.findByRole("button", {
+      name: "Delete 2 for good",
+    });
+    fireEvent.click(confirm);
+
+    await screen.findByText("0 selected");
+    expect(deletedIds.toSorted()).toEqual([1, 2]);
+  });
+
+  test("changing the selection disarms a primed delete", () => {
+    render(<ItemsRoute />);
+    enterSelectMode();
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(
+      screen.getByRole("button", { name: "Delete 2 for good" }),
+    ).toBeInTheDocument();
+
+    // Deselect one: the armed button named a count the user can no longer see.
+    fireEvent.click(row("Second Story"));
+
+    expect(screen.queryByRole("button", { name: /for good/ })).toBeNull();
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
   });
 });

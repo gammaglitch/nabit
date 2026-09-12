@@ -67,6 +67,24 @@ export class TagService implements TagServiceContract {
     return { added: true };
   }
 
+  /**
+   * Applies one tag to many items in a single insert.
+   *
+   * `added` counts only the rows that were new. Items that already carried the
+   * tag conflict away silently, which is what makes the bulk action safe to
+   * repeat over an overlapping selection.
+   */
+  async addToItems(input: { itemIds: number[]; tagId: number }) {
+    const db = requireDatabase(this.database);
+    const inserted = await db
+      .insert(itemTagsTable)
+      .values(input.itemIds.map((itemId) => ({ itemId, tagId: input.tagId })))
+      .onConflictDoNothing()
+      .returning({ itemId: itemTagsTable.itemId });
+
+    return { added: inserted.length };
+  }
+
   async removeFromItem(input: { itemId: number; tagId: number }) {
     const db = requireDatabase(this.database);
     const result = await db

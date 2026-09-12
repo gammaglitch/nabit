@@ -32,6 +32,15 @@ export const AddTagToItemOutput = z.object({
   added: z.boolean(),
 });
 
+export const AddTagToItemsInput = z.object({
+  itemIds: z.array(z.number()).min(1).max(500),
+  tagId: z.number(),
+});
+
+export const AddTagToItemsOutput = z.object({
+  added: z.number(),
+});
+
 export const RemoveTagFromItemInput = z.object({
   itemId: z.number(),
   tagId: z.number(),
@@ -49,6 +58,8 @@ export type DeleteTagInputDTO = z.infer<typeof DeleteTagInput>;
 export type DeleteTagOutputDTO = z.infer<typeof DeleteTagOutput>;
 export type AddTagToItemInputDTO = z.infer<typeof AddTagToItemInput>;
 export type AddTagToItemOutputDTO = z.infer<typeof AddTagToItemOutput>;
+export type AddTagToItemsInputDTO = z.infer<typeof AddTagToItemsInput>;
+export type AddTagToItemsOutputDTO = z.infer<typeof AddTagToItemsOutput>;
 export type RemoveTagFromItemInputDTO = z.infer<typeof RemoveTagFromItemInput>;
 export type RemoveTagFromItemOutputDTO = z.infer<
   typeof RemoveTagFromItemOutput

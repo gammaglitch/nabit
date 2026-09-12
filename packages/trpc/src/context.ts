@@ -25,6 +25,8 @@ import type {
 } from "./modules/hello/dto";
 import type {
   DeleteInputDTO,
+  DeleteManyInputDTO,
+  DeleteManyOutputDTO,
   DeleteOutputDTO,
   EnqueueIngestInputDTO,
   EnqueueIngestOutputDTO,
@@ -53,6 +55,8 @@ import type {
 import type {
   AddTagToItemInputDTO,
   AddTagToItemOutputDTO,
+  AddTagToItemsInputDTO,
+  AddTagToItemsOutputDTO,
   CreateTagInputDTO,
   CreateTagOutputDTO,
   DeleteTagInputDTO,
@@ -143,6 +147,9 @@ export interface TrpcServices {
       input: ReextractInputDTO,
     ): ReextractOutputDTO | Promise<ReextractOutputDTO>;
     delete(input: DeleteInputDTO): DeleteOutputDTO | Promise<DeleteOutputDTO>;
+    deleteMany(
+      input: DeleteManyInputDTO,
+    ): DeleteManyOutputDTO | Promise<DeleteManyOutputDTO>;
     setDigestOptIn(
       input: SetDigestOptInInputDTO,
     ): SetDigestOptInOutputDTO | Promise<SetDigestOptInOutputDTO>;
@@ -164,6 +171,9 @@ export interface TrpcServices {
     addToItem(
       input: AddTagToItemInputDTO,
     ): AddTagToItemOutputDTO | Promise<AddTagToItemOutputDTO>;
+    addToItems(
+      input: AddTagToItemsInputDTO,
+    ): AddTagToItemsOutputDTO | Promise<AddTagToItemsOutputDTO>;
     removeFromItem(
       input: RemoveTagFromItemInputDTO,
     ): RemoveTagFromItemOutputDTO | Promise<RemoveTagFromItemOutputDTO>;
