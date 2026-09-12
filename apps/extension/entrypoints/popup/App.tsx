@@ -18,6 +18,7 @@ import {
 } from "@/lib/config";
 import type { HnFavorite, HnFavoriteKind } from "@/lib/hn-favorites";
 import { sendHnFavoritesMessage, sendIngestMessage } from "@/lib/messages";
+import { parseRedditThreadUrl, REDDIT_HOST_PERMISSION } from "@/lib/reddit";
 
 type Tab = Browser.tabs.Tab;
 type Bookmark = Browser.bookmarks.BookmarkTreeNode;
@@ -214,8 +215,37 @@ export default function App() {
     setStatus(null);
 
     let items: ReturnType<typeof tabsToItems>;
+    // Parallel to `items`, so the worker knows which tab each one came from and
+    // can read a reddit thread's `.json` out of it. Only the tabs view has tabs.
+    let tabIds: (number | null)[] | undefined;
+
     if (view === "tabs") {
-      items = tabsToItems(tabs.filter((t) => selected.has(String(t.id))));
+      // Pre-filtered with the same predicate `tabsToItems` uses, so its output
+      // stays index-aligned with `tabIds` below.
+      const chosen = tabs.filter(
+        (tab): tab is Tab & { id: number; url: string } =>
+          typeof tab.id === "number" &&
+          typeof tab.url === "string" &&
+          selected.has(String(tab.id)),
+      );
+
+      // Before the first await, so the click still counts as the user gesture
+      // Chrome requires. Only asked for when it is actually needed, and a no-op
+      // once granted; a refusal is not fatal, the threads just fall back to the
+      // server fetch and fail there with reddit's own 403.
+      if (chosen.some((tab) => parseRedditThreadUrl(tab.url))) {
+        try {
+          await browser.permissions.request({
+            origins: [REDDIT_HOST_PERMISSION],
+          });
+        } catch {
+          // Swallowed on purpose: without the grant the in-tab capture fails and
+          // is reported as a warning, which beats failing the whole selection.
+        }
+      }
+
+      items = tabsToItems(chosen);
+      tabIds = chosen.map((tab) => tab.id);
     } else if (view === "bookmarks") {
       items = bookmarksToItems(bookmarks.filter((b) => selected.has(b.id)));
     } else {
@@ -231,7 +261,7 @@ export default function App() {
       // Remembered so the next bulk import defaults to the same tag rather
       // than silently sending untagged.
       await setImportTag(tagField);
-      const reply = await sendIngestMessage(items, tags);
+      const reply = await sendIngestMessage(items, tags, tabIds);
 
       if (!reply.ok) {
         setStatus({ message: reply.error, error: true });
@@ -240,10 +270,16 @@ export default function App() {
 
       const queued = reply.result.results.filter((r) => !r.reused).length;
       const tagged = tags.length > 0 ? ` as ${tags.join(", ")}` : "";
-      setStatus({
-        message: `${queued} queued${tagged}, ${reply.result.results.length - queued} already in flight`,
-        error: false,
-      });
+      const sent = `${queued} queued${tagged}, ${reply.result.results.length - queued} already in flight`;
+
+      // A reddit thread that could not be read from its tab was still sent, so
+      // the batch succeeded — but the thread will fail server-side, and saying
+      // so here is the only place the user finds out why.
+      setStatus(
+        reply.warnings?.length
+          ? { message: `${sent}. ${reply.warnings.join("; ")}`, error: true }
+          : { message: sent, error: false },
+      );
       setSelected(new Set());
     } catch (err) {
       setStatus({

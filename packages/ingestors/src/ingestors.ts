@@ -127,24 +127,85 @@ function getTweetId(url: string, payload?: unknown) {
   return match?.[1] ?? null;
 }
 
+function getRedditPostIdFromListing(listing: unknown) {
+  const post = Array.isArray(listing)
+    ? listing[0]?.data?.children?.[0]?.data
+    : undefined;
+  const fromListing = firstString(post?.id, post?.name);
+  return fromListing ? fromListing.replace(/^t3_/, "") : null;
+}
+
+function getRedditPostIdFromUrl(url: string) {
+  return new URL(url).pathname.match(/\/comments\/([^/]+)/)?.[1] ?? null;
+}
+
 function getRedditPostId(url: string, body?: string) {
   if (body) {
     try {
-      const payload = parseJson<any[]>(body);
-      const fromPayload = firstString(
-        payload?.[0]?.data?.children?.[0]?.data?.id,
-        payload?.[0]?.data?.children?.[0]?.data?.name,
-      );
-      if (fromPayload) {
-        return fromPayload.replace(/^t3_/, "");
+      const fromListing = getRedditPostIdFromListing(parseJson<any[]>(body));
+      if (fromListing) {
+        return fromListing;
       }
     } catch {
       // Ignore malformed capture bodies and fall back to the URL.
     }
   }
 
-  const match = new URL(url).pathname.match(/\/comments\/([^/]+)/);
-  return match?.[1] ?? null;
+  return getRedditPostIdFromUrl(url);
+}
+
+/**
+ * The listing a caller captured in the browser, or null when `payload` is not
+ * one.
+ *
+ * Presence of a payload cannot be the test: `tabsToItems()` in the extension
+ * attaches tab provenance (`{ id, title, url, faviconUrl }`) to *every* tab it
+ * sends, reddit threads included. A listing is always the JSON array
+ * `[post, comments]` and provenance is always an object, so the array shape is
+ * what separates "the browser captured this thread" from "the browser told us
+ * which tab it came from" — no extra field on the ingest DTO required.
+ *
+ * A string is accepted so the extension can forward the response body
+ * untouched; see `capture()` for why that matters.
+ */
+function asRedditListing(payload: unknown): unknown[] | null {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (typeof payload === "string") {
+    try {
+      const parsed = parseJson<unknown>(payload);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Client-supplied listings are untrusted input, so reject anything that is not
+ * the listing pair for the thread we were asked to archive. Without this a junk
+ * payload archives an empty item under a perfectly valid URL, which reads as a
+ * successful ingest — the worst failure mode for an archive, because nothing
+ * signals that the content was never captured.
+ */
+function assertRedditListingMatchesUrl(listing: unknown[], url: string) {
+  const listingPostId = getRedditPostIdFromListing(listing);
+  if (!listingPostId) {
+    throw new Error(
+      `Reddit payload for ${url} is a JSON array but not a post listing`,
+    );
+  }
+
+  const urlPostId = getRedditPostIdFromUrl(url);
+  if (urlPostId && urlPostId.toLowerCase() !== listingPostId.toLowerCase()) {
+    throw new Error(
+      `Reddit payload is for post ${listingPostId} but ${url} is post ${urlPostId}`,
+    );
+  }
 }
 
 function getHackerNewsItemId(url: string, body?: string) {
@@ -163,10 +224,23 @@ function getHackerNewsItemId(url: string, body?: string) {
   return new URL(url).searchParams.get("id");
 }
 
+/**
+ * Keep in sync with `buildThreadJsonUrl()` in `apps/extension/lib/reddit.ts`.
+ * The extension fetches the same representation from the user's browser, and a
+ * client capture and a server capture are only interchangeable — same stored
+ * snapshot, same re-extraction result — if both asked reddit for the same thing.
+ *
+ * `raw_json=1` stops reddit HTML-escaping `&`, `<` and `>` inside selftext and
+ * comment bodies. `limit=500` widens the comment page past the default handful.
+ * The query string is cleared first so a thread URL carrying tracking params
+ * still produces a deterministic request.
+ */
 function buildRedditJsonUrl(url: string) {
-  const parsed = new URL(url);
-  const jsonUrl = new URL(parsed.toString());
-  jsonUrl.pathname = `${parsed.pathname.replace(/\/+$/, "")}.json`;
+  const jsonUrl = new URL(url);
+  jsonUrl.pathname = `${jsonUrl.pathname.replace(/\/+$/, "")}.json`;
+  jsonUrl.search = "";
+  jsonUrl.searchParams.set("limit", "500");
+  jsonUrl.searchParams.set("raw_json", "1");
   return jsonUrl.toString();
 }
 
@@ -401,7 +475,31 @@ const redditIngestor: Ingestor = {
       url.hostname === "reddit.com" && /\/r\/.+\/comments\//.test(url.pathname)
     );
   },
-  async capture({ url }) {
+  async capture({ payload, url }) {
+    // Client-supplied capture. Reddit serves its "blocked by network security"
+    // page for `.json` to every unauthenticated client — not just datacenter
+    // egress, which is why the Gluetun overlay does not help here — so the
+    // browser extension fetches the listing from the user's own session and
+    // sends it through. `stringifyPayload` returns a string unchanged, so
+    // forwarding the raw response body stores it byte-for-byte: the snapshot is
+    // the archive, and `reextract` can only ever be as good as the bytes in it.
+    const listing = asRedditListing(payload);
+    if (listing) {
+      assertRedditListingMatchesUrl(listing, url);
+
+      return {
+        snapshots: [
+          {
+            body: stringifyPayload(payload),
+            contentType: "application/json",
+          },
+        ],
+      };
+    }
+
+    // No listing from the caller: the web UI, the discord bot, a REST client, or
+    // the linked-item recursion below an HN thread. Left in place so those paths
+    // degrade to reddit's 403 instead of hard-failing on a missing payload.
     const response = await fetchText(buildRedditJsonUrl(url), {
       headers: {
         "User-Agent": "nabit/0.1",

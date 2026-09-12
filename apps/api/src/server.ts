@@ -83,6 +83,12 @@ function assetBaseUrl(req: { protocol: string; host: string }): string {
 
 export async function buildApp() {
   const app = Fastify({
+    // Fastify defaults to 1 MiB, which a browser-captured reddit thread can
+    // exceed on its own — `.json?limit=500` on a busy thread runs to several
+    // megabytes, and `/ingest/batch` sends up to 50 items per POST. At the
+    // default those requests 413, which surfaces as "the extension fails on
+    // popular threads" and is miserable to trace back to a body limit.
+    bodyLimit: 32 * 1024 * 1024,
     logger: true,
   });
 

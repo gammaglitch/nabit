@@ -43,7 +43,9 @@ All ingestors live in `apps/api/src/modules/ingest/ingestors.ts`.
 ### `reddit` (`reddit_json`)
 
 - Matches `reddit.com/r/<sub>/comments/...`.
-- Fetches the `.json` variant of the post URL with `User-Agent: nabit/0.1`.
+- **Two capture paths.** If the caller supplies the `.json` listing as `payload`, it is stored as-is and nothing is fetched. Otherwise `capture()` falls back to fetching `.json?limit=500&raw_json=1` server-side with `User-Agent: nabit/0.1`.
+- **The server fetch no longer works against live reddit.** Reddit answers `.json` with a `403` "You've been blocked by network security" page for every unauthenticated client — this is not a datacenter-IP block, a residential IP gets the same response, so the `compose.vpn.yml` egress overlay does not help. `robots.txt` is `Disallow: /` for all agents. The fallback is kept only so the non-browser paths (web UI, discord bot, REST, the linked-item recursion under an HN thread) degrade to that error instead of hard-failing on a missing payload.
+- **The working path is the browser extension**, which fetches the same URL from inside the user's reddit tab and forwards the response body verbatim. See [Browser-captured reddit threads](#browser-captured-reddit-threads).
 - The first listing child is the post; the second is the comment tree, walked by `flattenRedditComments()` into a materialized-path list (`n0001.n0001…`).
 - Extracts: title, selftext, author, score, subreddit, num_comments, permalink.
 
@@ -105,6 +107,63 @@ Defined in `apps/api/src/db/schema.ts`:
 ## Read / delete
 
 `ingest.list` supports `search` (full-text via `searchVector @@ plainto_tsquery`), `sourceType`, and `tagIds` (item must have *all* requested tags). Sub-pages collected by a crawl are excluded unless `includeCrawledPages` is set, and the crawl **root** carries a `crawl` summary so the library can render it as a site. It loads every matching row — there is currently no `limit` / `offset`. `ingest.get` returns one item with its snapshots, extractions, comments, and tags. `ingest.delete` removes by id (cascades via FK).
+
+## Browser-captured reddit threads
+
+Reddit's `.json` endpoint refuses every unauthenticated client, so the only way
+to capture a thread is from a browser that is already logged in. The extension
+does that, and the API accepts the result through the existing `payload` field.
+
+- **Where the fetch runs.** Inside the thread's own tab, via
+  `browser.scripting.executeScript` (`apps/extension/lib/reddit.ts`). A fetch
+  issued from the background worker is cross-site relative to reddit.com, so
+  `SameSite=Lax` session cookies are withheld and reddit returns its block page
+  — the same URL that works in the address bar fails from the worker. Injected
+  into the tab it is a same-origin request carrying the user's real session.
+- **Permissions.** `scripting` is in the manifest; `*://*.reddit.com/*` is not,
+  and is requested at runtime on the first thread save (the same treatment
+  `news.ycombinator.com` gets, for the same reason — no install-time warning for
+  a feature a given user may never touch).
+- **The payload is the raw response body, as a string.** `stringifyPayload()`
+  passes strings through unchanged, so the stored snapshot is byte-for-byte what
+  reddit served that browser. This matters more here than elsewhere: these bytes
+  transit the user's browser once and cannot be re-fetched server-side, and
+  `reextract` can only ever be as good as the snapshot it replays.
+- **Payload presence is not the signal; shape is.** `tabsToItems()` attaches tab
+  provenance (`{ id, title, url, faviconUrl }`) to *every* tab it sends, reddit
+  threads included. A listing is always the JSON array `[post, comments]` and
+  provenance is always an object, so `asRedditListing()` discriminates on the
+  array shape. A provenance payload falls through to the server fetch rather
+  than being rejected.
+- **Validation happens twice, on purpose.** The extension checks the content
+  type, the array shape, and that the post id matches the tab before sending;
+  the ingestor re-checks the shape and the id against the URL, because a client
+  payload is untrusted input. The failure this guards against is specific and
+  observed: a stale session makes reddit answer **200 with an HTML login page**,
+  which would otherwise be archived as a successful capture holding a login form.
+- **Comment permalinks are truncated to the thread root.** Requesting `.json` on
+  a permalink returns only that comment's subtree, which would archive a
+  fragment that looks like a whole thread.
+- **Both paths request `?limit=500&raw_json=1`.** `buildThreadJsonUrl()` in the
+  extension and `buildRedditJsonUrl()` in `@repo/ingestors` must stay in step, or
+  a client capture and a server capture are not interchangeable.
+- **Partial failure is a warning, not an error.** A thread whose in-tab capture
+  fails is still sent without a listing, so one bad thread cannot sink a
+  selection; the reason comes back in `IngestReply.warnings` and is shown in the
+  popup.
+- **Body size.** A busy thread at `limit=500` runs to megabytes and
+  `/ingest/batch` sends up to 50 items, so the API sets `bodyLimit` to 32 MiB.
+  Fastify's 1 MiB default would 413, presenting as "the extension fails on
+  popular threads".
+
+### What this does not cover
+
+Only tabs carry a payload, so these still take the server path and still fail:
+
+- bookmark and HN-favorite imports that happen to contain reddit URLs
+- the web UI's capture modal, the discord bot, and REST clients
+- the linked-item recursion when an HN thread points at a reddit thread
+- re-ingesting threads that failed before this existed
 
 ## Linked items (HN / Reddit → article)
 

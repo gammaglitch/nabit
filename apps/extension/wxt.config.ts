@@ -38,7 +38,15 @@ export default defineConfig({
       name: "Nabit",
       description:
         "Send tabs, bookmarks and Hacker News favorites to your archival API.",
-      permissions: ["tabs", "bookmarks", "storage"],
+      // `scripting` lets the worker run a thread's `.json` fetch inside the
+      // reddit tab itself. A fetch from the worker is cross-site to reddit.com,
+      // so SameSite=Lax session cookies are withheld and reddit answers with
+      // its block page; injected into the tab the request is same-origin and
+      // carries the session the user already has. reddit.com is not listed in
+      // `host_permissions` — it rides on `optional_host_permissions` below and
+      // is requested on the first thread save, sparing every user an
+      // install-time warning for a feature they may never use.
+      permissions: ["tabs", "bookmarks", "storage", "scripting"],
       // The dev default plus whatever `.env` targets. Any other API host is
       // requested at runtime when it's saved in the popup's config panel, as
       // is news.ycombinator.com on the first favorites import — keeping it out

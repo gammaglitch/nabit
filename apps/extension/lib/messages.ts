@@ -6,11 +6,27 @@ export const INGEST_MESSAGE = "nabit:ingest";
 export interface IngestMessage {
   items: IngestItem[];
   tags: IngestTags;
+  /**
+   * The tab each item came from, by index, or null where it came from somewhere
+   * without one (bookmarks, HN favorites). Only the reddit capture uses it, and
+   * only the tabs view can populate it — see `enrichRedditItems()` in the
+   * background worker.
+   */
+  tabIds?: (number | null)[];
   type: typeof INGEST_MESSAGE;
 }
 
 export type IngestReply =
-  | { ok: true; result: BatchResult }
+  | {
+      ok: true;
+      result: BatchResult;
+      /**
+       * Non-fatal problems, currently reddit threads whose in-tab capture
+       * failed and were sent for the server to attempt instead. Reported rather
+       * than thrown so one bad thread cannot sink a whole selection.
+       */
+      warnings?: string[];
+    }
   | { ok: false; error: string };
 
 export function isIngestMessage(value: unknown): value is IngestMessage {
@@ -50,8 +66,9 @@ function requireReply<T>(reply: T | undefined, what: string): T {
 export async function sendIngestMessage(
   items: IngestItem[],
   tags: IngestTags = [],
+  tabIds?: (number | null)[],
 ): Promise<IngestReply> {
-  const message: IngestMessage = { items, tags, type: INGEST_MESSAGE };
+  const message: IngestMessage = { items, tabIds, tags, type: INGEST_MESSAGE };
   return requireReply(
     (await browser.runtime.sendMessage(message)) as IngestReply | undefined,
     INGEST_MESSAGE,
