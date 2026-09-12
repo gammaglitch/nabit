@@ -1,17 +1,30 @@
-const DEFAULT_API_URL = "http://localhost:3001";
+/** Strips trailing slashes so callers can append paths safely. */
+export function normalizeApiUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
+
+/**
+ * Build-time defaults from `apps/extension/.env` (see `.env.example`). WXT
+ * inlines every WXT_-prefixed var, so an unset one arrives as `undefined` and
+ * we fall back to the local dev API. These are only defaults — anything saved
+ * in the popup's config panel wins, since `defineItem` reads the fallback only
+ * when nothing is stored.
+ */
+const FALLBACK_API_URL = "http://localhost:3001";
+
+export const DEFAULT_API_URL = normalizeApiUrl(
+  import.meta.env.WXT_API_URL || FALLBACK_API_URL,
+);
+
+const DEFAULT_API_TOKEN = (import.meta.env.WXT_API_TOKEN ?? "").trim();
 
 const apiUrlItem = storage.defineItem<string>("local:apiUrl", {
   fallback: DEFAULT_API_URL,
 });
 
 const apiTokenItem = storage.defineItem<string>("local:apiToken", {
-  fallback: "",
+  fallback: DEFAULT_API_TOKEN,
 });
-
-/** Strips trailing slashes so callers can append paths safely. */
-export function normalizeApiUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "");
-}
 
 /** Returns the parsed URL, or null when it isn't a usable http(s) origin. */
 export function parseApiUrl(url: string): URL | null {

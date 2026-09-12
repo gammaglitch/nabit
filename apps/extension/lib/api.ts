@@ -60,6 +60,34 @@ export async function ingestBatch(items: IngestItem[]): Promise<BatchResult> {
   return response.json();
 }
 
+/**
+ * The API resolves an ingestor from the URL itself (`resolveIngestorName` in
+ * `@repo/ingestors`), so we normally omit the field and let it choose — that's
+ * what gets reddit and hacker_news threads their comment trees instead of a
+ * flat Readability pass over the rendered page.
+ *
+ * X/Twitter is the one exception. Its `tweet` ingestor has no server-side
+ * fetch path and throws unless the caller supplies the GraphQL payload, which
+ * the popup can't produce from `tabs.query()` alone — that needs a content
+ * script, the way `scripts/tampermonkey/x-bookmarks-exporter.user.js` does it.
+ * Pin those to `generic` so the job degrades instead of failing outright.
+ */
+function ingestorFor(url: string): IngestItem["ingestor"] {
+  try {
+    const parsed = new URL(url);
+    if (
+      /^(x|twitter)\.com$/i.test(parsed.hostname) &&
+      /\/status\/\d+/.test(parsed.pathname)
+    ) {
+      return "generic";
+    }
+  } catch {
+    // Callers filter to http(s) before this runs; let the server judge anyway.
+  }
+
+  return undefined;
+}
+
 export function tabsToItems(tabs: Browser.tabs.Tab[]): IngestItem[] {
   return tabs
     .filter(
@@ -67,7 +95,7 @@ export function tabsToItems(tabs: Browser.tabs.Tab[]): IngestItem[] {
         typeof tab.id === "number" && typeof tab.url === "string",
     )
     .map((tab) => ({
-      ingestor: "generic",
+      ingestor: ingestorFor(tab.url),
       payload: {
         faviconUrl: tab.favIconUrl,
         id: tab.id,
@@ -87,7 +115,7 @@ export function bookmarksToItems(
         typeof bm.url === "string",
     )
     .map((bm) => ({
-      ingestor: "generic",
+      ingestor: ingestorFor(bm.url),
       payload: {
         dateAdded: bm.dateAdded ?? null,
         id: bm.id,
