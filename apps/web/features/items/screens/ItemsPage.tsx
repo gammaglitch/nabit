@@ -16,6 +16,7 @@ import { ListRow } from "../components/ListRow";
 import { PreviewPane } from "../components/PreviewPane";
 import { QueueStatus } from "../components/QueueStatus";
 import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
+import { SortMenu } from "../components/SortMenu";
 import { SplitRow } from "../components/SplitRow";
 import { TagPicker, type TagPickerAnchor } from "../components/TagPicker";
 import { useBulkActions } from "../hooks/useBulkActions";
@@ -26,9 +27,29 @@ import {
   highlight,
   toDisplayItem,
 } from "../utils/item-helpers";
+import {
+  DEFAULT_SORT,
+  type SortSpec,
+  SORT_FIELDS,
+  sortItems,
+} from "../utils/item-sort";
 
 type Layout = "list" | "split" | "compact";
-type SortMode = "recent" | "oldest" | "title";
+
+/**
+ * Stored as one `field:direction` string. Anything unrecognized — an older
+ * build's "recent"/"oldest"/"title", a hand-edited value — falls back to the
+ * default rather than leaving the list in an order no control can express.
+ */
+function readStoredSort(): SortSpec {
+  const [field, direction] =
+    window.localStorage.getItem("nabit.sort")?.split(":") ?? [];
+  const known = SORT_FIELDS.some((f) => f.id === field);
+  if (!known || (direction !== "asc" && direction !== "desc")) {
+    return DEFAULT_SORT;
+  }
+  return { field: field as SortSpec["field"], direction };
+}
 
 export default function ItemsPage() {
   const router = useRouter();
@@ -42,7 +63,7 @@ export default function ItemsPage() {
     "all" | "article" | "hn" | "reddit" | "x"
   >("all");
   const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [sort, setSort] = useState<SortMode>("recent");
+  const [sort, setSort] = useState<SortSpec>(DEFAULT_SORT);
   const [layout, setLayout] = useState<Layout>("list");
   const [collapsed, setCollapsed] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -62,7 +83,15 @@ export default function ItemsPage() {
       setLayout(raw);
     }
     setCollapsed(window.localStorage.getItem("nabit.sidebarCollapsed") === "1");
+    setSort(readStoredSort());
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      "nabit.sort",
+      `${sort.field}:${sort.direction}`,
+    );
+  }, [sort]);
 
   useEffect(() => {
     window.localStorage.setItem("nabit.layout", layout);
@@ -148,11 +177,7 @@ export default function ItemsPage() {
           i.tags.some((t) => t.name.toLowerCase().includes(q)),
       );
     }
-    if (sort === "recent") out = [...out].sort((a, b) => b.savedAt - a.savedAt);
-    if (sort === "oldest") out = [...out].sort((a, b) => a.savedAt - b.savedAt);
-    if (sort === "title")
-      out = [...out].sort((a, b) => a.title.localeCompare(b.title));
-    return out;
+    return sortItems(out, sort);
   }, [
     displayItems,
     activeFolder,
@@ -558,30 +583,7 @@ export default function ItemsPage() {
           >
             {selection.active ? "Done" : "Select"}
           </button>
-          <div style={{ display: "flex", gap: 6 }}>
-            {(["recent", "oldest", "title"] as const).map((s) => (
-              <button
-                type="button"
-                key={s}
-                onClick={() => setSort(s)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "4px 8px",
-                  border: "1px solid var(--rule)",
-                  fontSize: 11,
-                  background: sort === s ? "var(--ink)" : "var(--bg)",
-                  color: sort === s ? "var(--bg)" : "var(--ink-2)",
-                  lineHeight: 1,
-                  fontFamily: "var(--mono-font)",
-                  borderColor: sort === s ? "var(--ink)" : "var(--rule)",
-                }}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
+          <SortMenu sort={sort} setSort={setSort} />
         </div>
 
         {listQuery.isLoading && (
@@ -640,6 +642,7 @@ export default function ItemsPage() {
                 <ListRow
                   key={item.id}
                   item={item}
+                  sortField={sort.field}
                   starred={isStarred(item.id)}
                   onOpen={() => onOpen(item)}
                   onToggleStar={() => toggleStarred(item.id)}
@@ -661,6 +664,7 @@ export default function ItemsPage() {
               <CompactRow
                 key={item.id}
                 item={item}
+                sortField={sort.field}
                 starred={isStarred(item.id)}
                 onOpen={() => onOpen(item)}
                 onToggleStar={() => toggleStarred(item.id)}
@@ -694,6 +698,7 @@ export default function ItemsPage() {
                 <SplitRow
                   key={item.id}
                   item={item}
+                  sortField={sort.field}
                   selected={selectedPreviewItem?.id === item.id}
                   starred={isStarred(item.id)}
                   onSelect={() => setPreviewId(item.id)}

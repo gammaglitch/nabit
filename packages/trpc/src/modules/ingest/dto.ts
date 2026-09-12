@@ -155,6 +155,10 @@ export const ItemSummaryOutput = z.object({
   title: z.string().nullable(),
   sourceCreatedAt: z.string().nullable(),
   ingestedAt: z.string(),
+  // Moves when the body or comments change, unlike `ingestedAt`, which is
+  // stamped once. A re-archived thread that picked up new comments is only
+  // visible as "recent" through this field. See `items.contentUpdatedAt`.
+  contentUpdatedAt: z.string(),
   metadata: MetadataRecord,
   digestOptIn: z.boolean(),
   snapshotCount: z.number().int().nonnegative(),

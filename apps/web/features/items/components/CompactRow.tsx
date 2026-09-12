@@ -2,17 +2,16 @@
 
 import type { ReactNode } from "react";
 import { useState } from "react";
-import {
-  sourceColor,
-  sourceLabel,
-  timeAgo,
-} from "@/features/shared/utils/source";
+import { sourceColor, sourceLabel } from "@/features/shared/utils/source";
 import type { DisplayItem } from "../utils/item-helpers";
+import { type SortField, sortStamp } from "../utils/item-sort";
 import { RemovableTag } from "./RemovableTag";
 import { StarButton } from "./StarButton";
 
 type CompactRowProps = {
   item: DisplayItem;
+  // Which date the row stamps itself with. See `sortStamp`.
+  sortField: SortField;
   starred: boolean;
   onOpen: () => void;
   onToggleStar: () => void;
@@ -26,6 +25,7 @@ type CompactRowProps = {
 
 export function CompactRow({
   item,
+  sortField,
   starred,
   onOpen,
   onToggleStar,
@@ -37,6 +37,7 @@ export function CompactRow({
 }: CompactRowProps) {
   const [hover, setHover] = useState(false);
   const srcCol = sourceColor(item.source);
+  const stamp = sortStamp(item, sortField);
 
   return (
     <button
@@ -159,6 +160,7 @@ export function CompactRow({
       </div>
 
       <div
+        title={stamp.title}
         style={{
           fontFamily: "var(--mono-font)",
           fontSize: 10,
@@ -166,7 +168,7 @@ export function CompactRow({
           textAlign: "right",
         }}
       >
-        {timeAgo(item.savedAt)}
+        {stamp.text}
       </div>
     </button>
   );
