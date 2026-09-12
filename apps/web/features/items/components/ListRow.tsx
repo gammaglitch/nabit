@@ -9,6 +9,7 @@ import {
 } from "@/features/shared/utils/source";
 import type { DisplayItem } from "../utils/item-helpers";
 import { RemovableTag } from "./RemovableTag";
+import { SiteBadge } from "./SiteBadge";
 import { StarButton } from "./StarButton";
 import type { TagPickerAnchor } from "./TagPicker";
 
@@ -67,7 +68,6 @@ export function ListRow({
     >
       <StarButton starred={starred} onToggle={onToggleStar} />
 
-
       <span>
         <span
           style={{
@@ -111,6 +111,12 @@ export function ListRow({
           }}
         >
           <span>{item.source === "reddit" ? item.subreddit : item.domain}</span>
+          {item.crawl && (
+            <>
+              <span style={{ margin: "0 6px", color: "var(--ink-4)" }}>·</span>
+              <SiteBadge crawl={item.crawl} size="sm" />
+            </>
+          )}
           {item.commentCount > 0 && (
             <>
               <span style={{ margin: "0 6px", color: "var(--ink-4)" }}>·</span>

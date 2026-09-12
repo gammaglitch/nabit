@@ -235,6 +235,12 @@ item the library never shows.
 `ReaderPage` redirects such an item to its parent: that relation means "not
 independently viewable", which is the opposite of a browsable sub-page.
 
+The library row for a crawl root carries a `SiteBadge`
+(`features/items/components/`) reading `SITE 87`, fed by the `crawl` summary
+that `toDisplayItem` now keeps. Without it a site of 87 archived pages renders
+as a row indistinguishable from one nabbed article, and nothing suggests there
+is a tree behind it. A running crawl shows `SITE 87+`.
+
 Web side, in `apps/web/features/sites/`:
 
 - `/sites` — one card per crawl, with progress, stop, and delete.
@@ -245,26 +251,60 @@ Web side, in `apps/web/features/sites/`:
   pass. It is pure and tested — including the cases that matter for not losing
   a page from the view: an orphan whose parent is missing is shown at the root,
   and a page claiming itself as its own parent does not hang the walk.
-- `archive-links.ts` (`features/sites/utils/`) resolves a link in the archived
-  prose to the archived copy of what it points at, so browsing the crawl by
-  clicking stays inside the crawl. The tree is not the only way through a site.
 
-  This is the one place the *stored* content is not the whole story, and it is
-  still not rewritten: `MarkdownArticle` takes a resolver and swaps the href as
-  it renders, only in the site browser and only for pages this crawl archived
-  and can display. Everything else keeps pointing at the live web, which is
-  also the failure mode when a match is missed — see *Why not httrack*.
+### The reader is the other way into a site
 
-  Matching does not go through `normalizeSourceUrl`. Both sides of the
-  comparison use `canonicalize()` in that file, so only internal consistency
-  matters, and it can drop `www.` and the scheme — which the server's
-  normalizer keeps — without any risk of drifting from it.
+A crawl root is a normal library row, so clicking it opens `/read/<itemId>`,
+not the site browser. The reader therefore carries the site with it: the same
+`SiteTree` in a 300px rail (collapsible from the `SITE · N pages` label in the
+header, open by default), `j` / `k` through the crawl's readable pages, and the
+`⌂` button beside it for `/sites/<id>`, where the crawl itself is managed.
+
+The rail only appears once `crawl.get` has returned pages — 300px of empty
+column while a query is in flight is worse than a beat of no rail at all.
+
+`ingest.get` returns the crawl *summary*, not its pages, so the reader fires
+its own `crawl.get`. Unpaginated, like everything else here; see *Known gaps*.
+
+### Resolving a link to the archived copy
+
+`archive-links.ts` (`features/sites/utils/`) resolves a link in archived prose
+to the archived copy of what it points at, so browsing the crawl by clicking
+stays inside the crawl. The tree is not the only way through a site.
+
+This is the one place the *stored* content is not the whole story, and it is
+still not rewritten: `MarkdownArticle` takes a resolver and swaps the href as
+it renders, only for pages this crawl archived and can display. Everything else
+keeps pointing at the live web, which is also the failure mode when a match is
+missed — see *Why not httrack*.
+
+**Both surfaces resolve, and they must agree.** They did not at first: the
+reader passed no resolver, so a rentry megathread opened from the library had
+all 43 of its links pointing at rentry.org, while the same stored markdown in
+the site browser rewrote the 14 that the crawl had archived. Same page, same
+bytes, two different answers to "where does this link go", depending only on
+which screen you reached it from.
+
+`useArchiveLinks` (`features/sites/hooks/`) is the fix and the guard: matching
+happens once, against one index, and the hook's `target` decides only how a hit
+is spelled — `/read/<itemId>` in the reader, `/sites/<id>?page=<pageId>` in the
+site browser. Following a link keeps you on the surface you were already on,
+with its rail or its reading pane intact. Adding a third surface means passing
+a third `target`, not writing a second matcher.
+
+Matching does not go through `normalizeSourceUrl`. Both sides of the
+comparison use `canonicalize()` in that file, so only internal consistency
+matters, and it can drop `www.` and the scheme — which the server's
+normalizer keeps — without any risk of drifting from it.
 
 ## Known gaps
 
 - **No registrable-domain scope.** Needs a public-suffix list; see *Modes*.
 - **`crawl.get` returns every page.** Fine for the 200-page default cap,
-  wasteful at the 5000 ceiling. Same unpaginated shape as `ingest.list`.
+  wasteful at the 5000 ceiling. Same unpaginated shape as `ingest.list`, and
+  now fetched by the reader too, for every crawled page opened. A slimmer
+  `{ id, itemId, url }` projection would serve both the tree and the link
+  index.
 - **No resume.** A cancelled crawl cannot be continued; re-running means
   starting a new one over the same URL. The ingest side is idempotent, so the
   pages update in place rather than duplicating, but the old crawl's tree stays

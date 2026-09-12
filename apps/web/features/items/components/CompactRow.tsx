@@ -9,6 +9,7 @@ import {
 } from "@/features/shared/utils/source";
 import type { DisplayItem } from "../utils/item-helpers";
 import { RemovableTag } from "./RemovableTag";
+import { SiteBadge } from "./SiteBadge";
 import { StarButton } from "./StarButton";
 
 type CompactRowProps = {
@@ -118,6 +119,11 @@ export function CompactRow({
           whiteSpace: "nowrap",
         }}
       >
+        {item.crawl && (
+          <>
+            <SiteBadge crawl={item.crawl} size="sm" />{" "}
+          </>
+        )}
         {renderTitle(item.title)}
       </div>
 

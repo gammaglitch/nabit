@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import ReaderPage from "@/features/reader/screens/ReaderPage";
 
@@ -33,11 +39,21 @@ type MockLinkedItem = {
   title: string | null;
 };
 
+type MockCrawlSummary = {
+  id: number;
+  label: string | null;
+  pageCount: number;
+  pageId: number;
+  pagesQueued: number;
+  status: string;
+};
+
 type MockItem = {
   author: string | null;
   commentCount: number;
   comments: MockComment[];
   contentMarkdown: string | null;
+  crawl: MockCrawlSummary | null;
   contentText: string | null;
   digestOptIn: boolean;
   linkedItem: MockLinkedItem | null;
@@ -105,6 +121,7 @@ const detailItem: MockItem = {
   ],
   contentMarkdown: null,
   contentText: null,
+  crawl: null,
   digestOptIn: false,
   linkedItem: linkedArticle,
   externalId: "47730194",
@@ -125,6 +142,7 @@ const detailItem: MockItem = {
 
 const {
   useQueryMock,
+  crawlGetMock,
   mutateDigestOptIn,
   mutateReextract,
   mutateDelete,
@@ -134,6 +152,7 @@ const {
   resetGet,
 } = vi.hoisted(() => ({
   useQueryMock: vi.fn(),
+  crawlGetMock: vi.fn(),
   mutateDigestOptIn: vi.fn().mockResolvedValue({ digestOptIn: true, id: 1 }),
   mutateReextract: vi.fn(),
   mutateDelete: vi.fn().mockResolvedValue({ deleted: true }),
@@ -166,6 +185,11 @@ vi.mock("@/lib/trpc/react", () => {
         },
         tags: { list: { invalidate: vi.fn() } },
       }),
+      crawl: {
+        get: {
+          useQuery: (...args: unknown[]) => crawlGetMock(...args),
+        },
+      },
       ingest: {
         get: {
           useQuery: (...args: unknown[]) => useQueryMock(...args),
@@ -223,6 +247,12 @@ vi.mock("@/lib/trpc/react", () => {
 
 describe("ReaderPage", () => {
   beforeEach(() => {
+    crawlGetMock.mockReset();
+    crawlGetMock.mockReturnValue({
+      data: undefined,
+      error: null,
+      isLoading: false,
+    });
     mutateDigestOptIn.mockClear();
     mutateDelete.mockClear();
     routerPush.mockClear();
@@ -500,5 +530,189 @@ describe("ReaderPage", () => {
     expect(
       await screen.findByRole("button", { name: "Re-extract failed" }),
     ).toBeInTheDocument();
+  });
+  describe("a page that belongs to a crawl", () => {
+    // Shaped like the rentry megathread that prompted this: an index page whose
+    // links are a mix of pages the crawl archived and pages it never reached.
+    const crawlPage = (
+      overrides: Partial<{
+        id: number;
+        itemId: number | null;
+        parentPageId: number | null;
+        status: string;
+        title: string | null;
+        url: string;
+      }>,
+    ) => ({
+      depth: 0,
+      discoveryIndex: 0,
+      errorMessage: null,
+      id: 2,
+      isExternal: false,
+      isLeaf: false,
+      isRoot: false,
+      itemId: null,
+      parentPageId: null,
+      sourceType: "webpage",
+      status: "done",
+      title: null,
+      url: "https://rentry.org/megathread",
+      ...overrides,
+    });
+
+    const pages = [
+      crawlPage({
+        id: 2,
+        isRoot: true,
+        itemId: 1,
+        title: "Megathread",
+        url: "https://rentry.org/megathread",
+      }),
+      crawlPage({
+        id: 3,
+        itemId: 42,
+        parentPageId: 2,
+        title: "Anime",
+        url: "https://rentry.org/megathread-anime",
+      }),
+      // Archived by the crawl but never extracted, so there is nothing to open.
+      crawlPage({
+        id: 4,
+        parentPageId: 2,
+        status: "failed",
+        title: "Books",
+        url: "https://rentry.org/megathread-books",
+      }),
+    ];
+
+    const crawledItem: MockItem = {
+      ...detailItem,
+      comments: [],
+      commentCount: 0,
+      contentMarkdown:
+        "See the [anime list](https://rentry.org/megathread-anime), and get [Firefox](https://www.firefox.com/).",
+      contentText: null,
+      crawl: {
+        id: 7,
+        label: "Megathread",
+        pageCount: 2,
+        pageId: 2,
+        pagesQueued: 0,
+        status: "done",
+      },
+      linkedItem: null,
+      sourceType: "webpage",
+      sourceUrl: "https://rentry.org/megathread",
+      title: "Megathread",
+    };
+
+    beforeEach(() => {
+      useQueryMock.mockReturnValue({
+        data: { item: crawledItem },
+        error: null,
+        isLoading: false,
+      });
+      crawlGetMock.mockReturnValue({
+        data: { crawl: { id: 7, status: "done" }, pages },
+        error: null,
+        isLoading: false,
+      });
+    });
+
+    test("says it is a site, and shows the tree of its pages", () => {
+      render(<ReaderPage id={1} />);
+
+      // The library row for a crawl stands for the whole site, so the reader is
+      // where you find out it has 87 — here 2 — pages behind it.
+      expect(
+        screen.getByRole("button", { name: /Site · 2 pages/ }),
+      ).toBeInTheDocument();
+      const tree = screen.getByRole("navigation", { name: "Site pages" });
+      expect(within(tree).getByRole("button", { name: "Anime" })).toBeEnabled();
+      // A page the crawl failed on has nothing to open.
+      expect(
+        within(tree).getByRole("button", { name: "Books" }),
+      ).toBeDisabled();
+    });
+
+    test("hides and restores the tree from the site label", () => {
+      render(<ReaderPage id={1} />);
+
+      fireEvent.click(screen.getByRole("button", { name: /Site · 2 pages/ }));
+      expect(
+        screen.queryByRole("navigation", { name: "Site pages" }),
+      ).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /Site · 2 pages/ }));
+      expect(
+        screen.getByRole("navigation", { name: "Site pages" }),
+      ).toBeInTheDocument();
+    });
+
+    test("picking a page from the tree opens it in the reader", () => {
+      render(<ReaderPage id={1} />);
+
+      const tree = screen.getByRole("navigation", { name: "Site pages" });
+      fireEvent.click(within(tree).getByRole("button", { name: "Anime" }));
+
+      expect(routerPush).toHaveBeenCalledWith("/read/42");
+    });
+
+    test("a link to an archived page opens our copy, not the live web", () => {
+      render(<ReaderPage id={1} />);
+
+      // The whole point of the change: this used to point at rentry.org here
+      // and at the archive in the site browser, for the same stored markdown.
+      const internal = screen.getByRole("link", { name: "anime list" });
+      expect(internal).toHaveAttribute("href", "/read/42");
+      expect(internal).not.toHaveAttribute("target");
+
+      fireEvent.click(internal);
+      expect(routerPush).toHaveBeenCalledWith("/read/42");
+    });
+
+    test("a link the crawl never archived is left pointing at the live web", () => {
+      render(<ReaderPage id={1} />);
+
+      const external = screen.getByRole("link", { name: "Firefox" });
+      expect(external).toHaveAttribute("href", "https://www.firefox.com/");
+      expect(external).toHaveAttribute("target", "_blank");
+    });
+
+    test("j moves to the next readable page of the site", () => {
+      render(<ReaderPage id={1} />);
+
+      fireEvent.keyDown(window, { key: "j" });
+
+      // Page 4 failed, so the only place to go from the root is the anime page.
+      expect(routerPush).toHaveBeenCalledWith("/read/42");
+    });
+  });
+
+  test("an ordinary item gets no tree and no rewritten links", () => {
+    useQueryMock.mockReturnValue({
+      data: {
+        item: {
+          ...detailItem,
+          comments: [],
+          contentMarkdown: "A [link](https://rentry.org/megathread-anime).",
+          contentText: null,
+          linkedItem: null,
+          sourceType: "webpage",
+        },
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    expect(
+      screen.queryByRole("navigation", { name: "Site pages" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "link" })).toHaveAttribute(
+      "href",
+      "https://rentry.org/megathread-anime",
+    );
   });
 });
