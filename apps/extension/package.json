@@ -4,13 +4,16 @@
   "type": "module",
   "scripts": {
     "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
     "check": "bun run lint && bun run typecheck",
     "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
     "lint": "biome lint .",
     "style:check": "biome check --formatter-enabled=true --linter-enabled=false .",
     "typecheck": "tsc --noEmit",
-    "verify": "bun run check && bun run style:check && bun run build",
-    "zip": "wxt zip"
+    "verify": "bun run check && bun run style:check && bun run build && bun run build:firefox",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip -b firefox"
   },
   "dependencies": {
     "@wxt-dev/module-react": "1.2.2",
@@ -19,7 +22,6 @@
     "wxt": "0.20.20"
   },
   "devDependencies": {
-    "@types/chrome": "^0.1.38",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3"
   }
