@@ -2,18 +2,17 @@
 
 import type { MouseEvent, ReactNode } from "react";
 import { useState } from "react";
-import {
-  sourceColor,
-  sourceLabel,
-  timeAgo,
-} from "@/features/shared/utils/source";
+import { sourceColor, sourceLabel } from "@/features/shared/utils/source";
 import type { DisplayItem } from "../utils/item-helpers";
+import { type SortField, sortStamp } from "../utils/item-sort";
 import { RemovableTag } from "./RemovableTag";
 import { StarButton } from "./StarButton";
 import type { TagPickerAnchor } from "./TagPicker";
 
 type SplitRowProps = {
   item: DisplayItem;
+  // Which date the row stamps itself with. See `sortStamp`.
+  sortField: SortField;
   selected: boolean;
   starred: boolean;
   onSelect: () => void;
@@ -26,6 +25,7 @@ type SplitRowProps = {
 
 export function SplitRow({
   item,
+  sortField,
   selected,
   starred,
   onSelect,
@@ -37,6 +37,7 @@ export function SplitRow({
 }: SplitRowProps) {
   const [hover, setHover] = useState(false);
   const srcCol = sourceColor(item.source);
+  const stamp = sortStamp(item, sortField);
   const bg = selected || hover ? "var(--bg-alt)" : "var(--bg)";
 
   return (
@@ -94,6 +95,7 @@ export function SplitRow({
           {item.source === "reddit" ? item.subreddit : item.domain}
         </span>
         <span
+          title={stamp.title}
           style={{
             marginLeft: "auto",
             fontFamily: "var(--mono-font)",
@@ -101,7 +103,7 @@ export function SplitRow({
             color: "var(--ink-3)",
           }}
         >
-          {timeAgo(item.savedAt)}
+          {stamp.text}
         </span>
         <StarButton
           starred={starred}

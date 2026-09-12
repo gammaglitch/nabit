@@ -89,6 +89,7 @@ vi.mock("@/lib/trpc/react", () => {
                     commentCount: 1,
                     contentMarkdown: "Long-form extracted article body.",
                     contentText: "Long-form extracted article body.",
+                    contentUpdatedAt: "2026-04-06T10:00:00.000Z",
                     externalId: "https://example.com/story",
                     id: 1,
                     ingestedAt: "2026-04-04T10:00:00.000Z",
@@ -107,6 +108,7 @@ vi.mock("@/lib/trpc/react", () => {
                     commentCount: 0,
                     contentMarkdown: "Second body.",
                     contentText: "Second body.",
+                    contentUpdatedAt: "2026-04-06T10:00:00.000Z",
                     externalId: "https://example.com/second",
                     id: 2,
                     ingestedAt: "2026-04-05T10:00:00.000Z",
@@ -304,5 +306,102 @@ describe("items page select mode", () => {
 
     expect(screen.queryByRole("button", { name: /for good/ })).toBeNull();
     expect(screen.getByText("1 selected")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The sort control is a menu plus a direction toggle rather than one button
+ * per mode, so the two halves have to stay in step: picking a field resets the
+ * direction to that field's natural one, and the toggle reverses whatever is
+ * selected. `item-sort.test.ts` covers the ordering itself.
+ */
+describe("items page sorting", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  const titles = () =>
+    screen
+      .getAllByText(/Archiveable Story|Second Story/)
+      .map((el) => el.textContent);
+
+  const openMenu = () =>
+    fireEvent.click(screen.getByRole("button", { name: /Date added/ }));
+
+  test("defaults to newest added first", () => {
+    render(<ItemsRoute />);
+
+    expect(
+      screen.getByRole("button", { name: /Date added/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sort direction: Newest first" }),
+    ).toBeInTheDocument();
+    expect(titles()).toEqual(["Second Story", "Archiveable Story"]);
+  });
+
+  test("the direction toggle reverses the list", () => {
+    render(<ItemsRoute />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sort direction: Newest first" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Sort direction: Oldest first" }),
+    ).toBeInTheDocument();
+    expect(titles()).toEqual(["Archiveable Story", "Second Story"]);
+  });
+
+  test("picking a field switches to that field's natural direction", () => {
+    render(<ItemsRoute />);
+    // Reverse first, so a leftover "asc" would be visible in the result.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sort direction: Newest first" }),
+    );
+
+    openMenu();
+    fireEvent.click(screen.getByRole("option", { name: /Title/ }));
+
+    expect(screen.getByRole("button", { name: /Title/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sort direction: A → Z" }),
+    ).toBeInTheDocument();
+    expect(titles()).toEqual(["Archiveable Story", "Second Story"]);
+  });
+
+  test("the menu closes on escape", () => {
+    render(<ItemsRoute />);
+    openMenu();
+
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  test("the choice survives a remount", () => {
+    const first = render(<ItemsRoute />);
+    openMenu();
+    fireEvent.click(screen.getByRole("option", { name: /Date published/ }));
+    first.unmount();
+
+    render(<ItemsRoute />);
+
+    expect(
+      screen.getByRole("button", { name: /Date published/ }),
+    ).toBeInTheDocument();
+  });
+
+  test("a sort mode from an older build falls back to the default", () => {
+    window.localStorage.setItem("nabit.sort", "oldest");
+
+    render(<ItemsRoute />);
+
+    expect(
+      screen.getByRole("button", { name: /Date added/ }),
+    ).toBeInTheDocument();
+    expect(titles()).toEqual(["Second Story", "Archiveable Story"]);
   });
 });

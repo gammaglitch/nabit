@@ -275,6 +275,7 @@ function toSummary(
     commentCount: counts.commentCount,
     contentMarkdown: row.contentMarkdown,
     contentText: row.contentText,
+    contentUpdatedAt: row.contentUpdatedAt.toISOString(),
     digestOptIn: row.digestOptIn,
     externalId: row.externalId,
     id: row.id,

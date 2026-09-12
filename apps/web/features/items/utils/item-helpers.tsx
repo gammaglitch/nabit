@@ -24,9 +24,22 @@ export type DisplayItem = {
   tags: Array<{ id: number; name: string }>;
   commentCount: number;
   savedAt: number;
+  // Parsed once here rather than in the sort comparator, which would otherwise
+  // re-parse the same strings on every comparison. Null covers both a source
+  // that carried no date and one whose date does not parse — including a web
+  // build talking to an API old enough to not send `contentUpdatedAt` yet,
+  // which sinks those items in that one sort rather than scrambling it.
+  updatedAt: number | null;
+  publishedAt: number | null;
   sourceCreatedAt: string | null;
   contentText: string | null;
 };
+
+function parseDate(value: string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const ts = new Date(value).getTime();
+  return Number.isNaN(ts) ? null : ts;
+}
 
 export function toDisplayItem(item: ItemSummary | ItemDetail): DisplayItem {
   const source = normalizeSource(item.sourceType);
@@ -49,6 +62,8 @@ export function toDisplayItem(item: ItemSummary | ItemDetail): DisplayItem {
     tags: item.tags,
     commentCount: item.commentCount,
     savedAt: new Date(item.ingestedAt).getTime(),
+    updatedAt: parseDate(item.contentUpdatedAt),
+    publishedAt: parseDate(item.sourceCreatedAt),
     sourceCreatedAt: item.sourceCreatedAt,
     contentText: body || null,
   };
