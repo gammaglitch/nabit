@@ -1192,6 +1192,27 @@ export class IngestService implements IngestServiceContract {
     return { deleted: result.length > 0 };
   }
 
+  /**
+   * Deletes a batch of items in one statement, and reports how many rows
+   * actually went.
+   *
+   * The count is what the caller gets instead of a per-id result: ids that no
+   * longer exist are not an error here. A bulk selection is built from a list
+   * the client fetched earlier, so an item deleted from another tab in the
+   * meantime is an expected miss, not a failure worth rejecting the batch over.
+   *
+   * Same cascades as `delete`, and just as final.
+   */
+  async deleteMany(input: { ids: number[] }) {
+    const db = requireDatabase(this.database);
+    const result = await db
+      .delete(itemsTable)
+      .where(inArray(itemsTable.id, input.ids))
+      .returning({ id: itemsTable.id });
+
+    return { deleted: result.length };
+  }
+
   async setDigestOptIn(input: { digestOptIn: boolean; id: number }) {
     const db = requireDatabase(this.database);
     const [updated] = await db

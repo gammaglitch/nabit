@@ -18,6 +18,10 @@ type CompactRowProps = {
   onToggleStar: () => void;
   onRemoveTag: (tagId: number) => void;
   renderTitle: (title: string) => ReactNode;
+  /** Select mode is on: clicking the row picks it instead of opening it. */
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (extend: boolean) => void;
 };
 
 export function CompactRow({
@@ -27,6 +31,9 @@ export function CompactRow({
   onToggleStar,
   onRemoveTag,
   renderTitle,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }: CompactRowProps) {
   const [hover, setHover] = useState(false);
   const srcCol = sourceColor(item.source);
@@ -34,7 +41,14 @@ export function CompactRow({
   return (
     <button
       type="button"
-      onClick={onOpen}
+      aria-pressed={selectable ? selected : undefined}
+      onClick={(e) => {
+        if (selectable) {
+          onToggleSelect?.(e.shiftKey);
+          return;
+        }
+        onOpen();
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -43,7 +57,8 @@ export function CompactRow({
         padding: "6px 24px",
         borderBottom: "1px solid var(--rule-soft)",
         alignItems: "center",
-        background: hover ? "var(--bg-alt)" : "var(--bg)",
+        background: selected || hover ? "var(--bg-alt)" : "var(--bg)",
+        boxShadow: selected ? "inset 2px 0 0 var(--accent)" : undefined,
         fontSize: 13,
         gap: 12,
         width: "100%",
@@ -55,11 +70,31 @@ export function CompactRow({
         borderBottomColor: "var(--rule-soft)",
       }}
     >
-      <StarButton
-        starred={starred}
-        onToggle={onToggleStar}
-        style={{ fontSize: 12 }}
-      />
+      {selectable ? (
+        <span
+          aria-hidden="true"
+          style={{
+            alignItems: "center",
+            border: `1px solid ${selected ? "var(--accent)" : "var(--ink-4)"}`,
+            background: selected ? "var(--accent)" : "transparent",
+            color: "var(--bg)",
+            display: "inline-flex",
+            fontSize: 9,
+            height: 13,
+            justifyContent: "center",
+            lineHeight: 1,
+            width: 13,
+          }}
+        >
+          {selected ? "✓" : ""}
+        </span>
+      ) : (
+        <StarButton
+          starred={starred}
+          onToggle={onToggleStar}
+          style={{ fontSize: 12 }}
+        />
+      )}
 
       <span
         style={{
@@ -95,13 +130,32 @@ export function CompactRow({
           alignItems: "center",
         }}
       >
-        {item.tags.map((t) => (
-          <RemovableTag
-            key={t.id}
-            tag={t.name}
-            onRemove={() => onRemoveTag(t.id)}
-          />
-        ))}
+        {/* In select mode the chips go static. RemovableTag stops propagation,
+            so leaving them live means a click near a tag silently strips it
+            instead of selecting the row the user was aiming at. */}
+        {item.tags.map((t) =>
+          selectable ? (
+            <span
+              key={t.id}
+              style={{
+                border: "1px solid var(--rule-soft)",
+                color: "var(--ink-3)",
+                fontFamily: "var(--mono-font)",
+                fontSize: 10,
+                lineHeight: 1.2,
+                padding: "2px 6px",
+              }}
+            >
+              #{t.name}
+            </span>
+          ) : (
+            <RemovableTag
+              key={t.id}
+              tag={t.name}
+              onRemove={() => onRemoveTag(t.id)}
+            />
+          ),
+        )}
       </div>
 
       <div

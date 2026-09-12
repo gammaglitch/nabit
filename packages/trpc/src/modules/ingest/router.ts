@@ -2,6 +2,8 @@ import { router } from "../../lib/trpc/core";
 import { authedProcedure } from "../../lib/trpc/middlewares";
 import {
   DeleteInput,
+  DeleteManyInput,
+  DeleteManyOutput,
   DeleteOutput,
   EnqueueIngestInput,
   EnqueueIngestOutput,
@@ -77,6 +79,12 @@ export const ingestRouter = router({
     .output(DeleteOutput)
     .mutation(async ({ ctx, input }) => {
       return ctx.services.ingest.delete(input);
+    }),
+  deleteMany: authedProcedure
+    .input(DeleteManyInput)
+    .output(DeleteManyOutput)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.services.ingest.deleteMany(input);
     }),
   setDigestOptIn: authedProcedure
     .input(SetDigestOptInInput)

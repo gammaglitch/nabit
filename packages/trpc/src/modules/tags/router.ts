@@ -3,6 +3,8 @@ import { authedProcedure } from "../../lib/trpc/middlewares";
 import {
   AddTagToItemInput,
   AddTagToItemOutput,
+  AddTagToItemsInput,
+  AddTagToItemsOutput,
   CreateTagInput,
   CreateTagOutput,
   DeleteTagInput,
@@ -33,6 +35,12 @@ export const tagsRouter = router({
     .output(AddTagToItemOutput)
     .mutation(async ({ ctx, input }) => {
       return ctx.services.tags.addToItem(input);
+    }),
+  addToItems: authedProcedure
+    .input(AddTagToItemsInput)
+    .output(AddTagToItemsOutput)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.services.tags.addToItems(input);
     }),
   removeFromItem: authedProcedure
     .input(RemoveTagFromItemInput)
