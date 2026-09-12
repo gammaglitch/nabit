@@ -12,6 +12,9 @@ This file only covers the parts that are not obvious from `package.json`.
   - Runs the Biome style gate across workspaces: formatter and import sorting checks, without the linter.
 - `bun run fix`
   - Applies safe Biome fixes across workspaces, including formatting and import sorting.
+- `bun run dev:web`
+  - Runs dev for `@repo/web` and `@repo/api` only. Plain `bun run dev` also
+    starts the Discord bot and the extension's wxt dev server.
 - `bun run test`
   - Runs all workspace tests.
 - `bun run verify`
@@ -30,6 +33,13 @@ This file only covers the parts that are not obvious from `package.json`.
 - Mobile tests use Jest with `jest-expo`, not `bun test`.
 - Shared packages use declaration-oriented `tsc` build/watch scripts.
 - Root `format` still runs `biome format --write .` only. Use `fix` when you also want import sorting and other safe Biome fixes.
+- `dev:web` does not filter in the shared packages, and does not need to: every
+  package's `exports` points at `src`, so web and api load package source
+  directly. The packages' `dev` scripts are `tsc --watch` emitting declarations
+  for editors, not something runtime reload depends on.
+- No `dev` script starts the ingest worker — that includes plain `dev`. Queued
+  nabs sit unprocessed until `bun run start:worker` is running in `apps/api`, or
+  the Docker stack's `ingest-worker` service is up.
 
 ## When To Use What
 

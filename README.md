@@ -67,6 +67,18 @@ bun install
 bun run dev
 ```
 
+`bun run dev` starts every workspace, the Discord bot and the extension
+included. For just the two you need to click around the library:
+
+```bash
+bun run dev:web
+```
+
+Web comes up on `http://127.0.0.1:3002`, the API on `http://127.0.0.1:3001`.
+Neither starts the ingest worker, so captures queue but are not processed —
+run `bun run start:worker` in `apps/api` alongside it, or use the Docker stack
+below.
+
 Useful scripts (run from the repo root):
 
 - `bun run check` — lint + typecheck
