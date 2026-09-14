@@ -9,8 +9,8 @@ import { hostname } from "@/features/shared/utils/source";
 import { trpc } from "@/lib/trpc/react";
 import { CrawlProgress } from "../components/CrawlProgress";
 import { SiteTree } from "../components/SiteTree";
+import { useArchiveLinks } from "../hooks/useArchiveLinks";
 import { useCrawl, useCrawls } from "../hooks/useCrawls";
-import { buildArchiveIndex, resolveArchivedPage } from "../utils/archive-links";
 import {
   buildSiteTree,
   type CrawlPage,
@@ -116,16 +116,14 @@ export default function SiteBrowserPage({ id }: { id: number }) {
   // should stay inside the archive. The stored markdown is left untouched —
   // see utils/archive-links.ts for why the rewrite happens here and not on
   // ingest — so anything the crawl did not reach still goes to the live web.
-  const archiveIndex = useMemo(() => buildArchiveIndex(pages), [pages]);
-  const selectedUrl = selectedPage?.url ?? null;
-  const resolveInternalHref = useCallback(
-    (href: string | undefined) => {
-      if (!selectedUrl) return null;
-      const pageId = resolveArchivedPage(archiveIndex, href, selectedUrl);
-      return pageId === null ? null : `/sites/${id}?page=${pageId}`;
-    },
-    [archiveIndex, id, selectedUrl],
-  );
+  // The reader resolves the same links against the same index; only the URL a
+  // hit becomes differs.
+  const resolveInternalHref = useArchiveLinks({
+    crawlId: id,
+    currentUrl: selectedPage?.url ?? null,
+    pages,
+    target: "site",
+  });
   // `push`, unlike the tree's `select`, which replaces. Picking a page in the
   // tree is adjusting a view; following a link through the archive is going
   // somewhere, and Back has to bring you home from it.

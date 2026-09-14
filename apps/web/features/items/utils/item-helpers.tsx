@@ -33,6 +33,9 @@ export type DisplayItem = {
   publishedAt: number | null;
   sourceCreatedAt: string | null;
   contentText: string | null;
+  // Present only on the root of a crawl, and the only thing that tells the
+  // library a row is a whole archived site rather than one saved page.
+  crawl: ItemSummary["crawl"];
 };
 
 function parseDate(value: string | null | undefined): number | null {
@@ -61,6 +64,7 @@ export function toDisplayItem(item: ItemSummary | ItemDetail): DisplayItem {
     excerpt,
     tags: item.tags,
     commentCount: item.commentCount,
+    crawl: item.crawl,
     savedAt: new Date(item.ingestedAt).getTime(),
     updatedAt: parseDate(item.contentUpdatedAt),
     publishedAt: parseDate(item.sourceCreatedAt),

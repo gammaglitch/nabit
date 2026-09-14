@@ -1,12 +1,10 @@
 "use client";
 
 import type { MouseEvent } from "react";
-import {
-  sourceColor,
-  sourceLabel,
-} from "@/features/shared/utils/source";
+import { sourceColor, sourceLabel } from "@/features/shared/utils/source";
 import type { DisplayItem, ItemDetail } from "../utils/item-helpers";
 import { RemovableTag } from "./RemovableTag";
+import { SiteBadge } from "./SiteBadge";
 import type { TagPickerAnchor } from "./TagPicker";
 
 type PreviewPaneProps = {
@@ -92,6 +90,7 @@ export function PreviewPane({
         >
           {sourceLabel(item.source)}
         </span>
+        <SiteBadge crawl={item.crawl} />
         <span
           style={{
             fontFamily: "var(--mono-font)",

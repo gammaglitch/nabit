@@ -5,8 +5,15 @@
  * nabit is deliberately not a mirror (see docs/features/crawl.md, "Why not
  * httrack"): stored markdown keeps the hrefs the page actually shipped, so the
  * archive stays a faithful record of what was published. Rewriting therefore
- * happens at render time and only in the site browser, where "the pages this
- * crawl archived" is a question with an answer.
+ * happens at render time, wherever a crawled page is displayed — the reader
+ * and the site browser both — because "the pages this crawl archived" is a
+ * question with an answer on either.
+ *
+ * Matching is done once, here; the two surfaces differ only in the URL they
+ * build from a hit, and `useArchiveLinks` owns that. A reader that resolved
+ * links differently from the site browser is the bug this shape exists to
+ * prevent: the same link pointing at the live web on one screen and at the
+ * archive on the other.
  *
  * Matching deliberately does *not* try to agree with `normalizeSourceUrl` in
  * @repo/ingestors. Both sides of every comparison — the stored page URL and the
@@ -64,9 +71,19 @@ export type ArchivedPageRef = {
 };
 
 /**
- * Index of canonical URL to page id, for the pages this crawl can actually
- * display. A page still queued, failed or skipped has nothing to show, so it is
- * left out and links to it stay external rather than landing on a blank pane.
+ * What a matched link points at. Both ids travel together because the two
+ * surfaces address the same page differently: the site browser by its crawl
+ * page (`/sites/<id>?page=`), the reader by the item it archived into
+ * (`/read/<itemId>`). Only pages that are `done` with an item are indexed, so
+ * `itemId` is known to be present here.
+ */
+export type ArchivedTarget = { pageId: number; itemId: number };
+
+/**
+ * Index of canonical URL to archived page, for the pages this crawl can
+ * actually display. A page still queued, failed or skipped has nothing to show,
+ * so it is left out and links to it stay external rather than landing on a
+ * blank pane.
  *
  * First occurrence wins. `crawl.get` returns rows parents-before-children, so
  * when two pages collapse to the same key the shallower one — the one nearer
@@ -74,26 +91,28 @@ export type ArchivedPageRef = {
  */
 export function buildArchiveIndex(
   pages: readonly ArchivedPageRef[],
-): Map<string, number> {
-  const index = new Map<string, number>();
+): Map<string, ArchivedTarget> {
+  const index = new Map<string, ArchivedTarget>();
   for (const page of pages) {
     if (page.status !== "done" || page.itemId === null) continue;
     const key = canonicalize(page.url);
-    if (key && !index.has(key)) index.set(key, page.id);
+    if (key && !index.has(key)) {
+      index.set(key, { itemId: page.itemId, pageId: page.id });
+    }
   }
   return index;
 }
 
 /**
- * The archived page id an href points at, or null to leave the link alone.
+ * The archived page an href points at, or null to leave the link alone.
  * `base` is the URL of the page being read, so relative hrefs resolve against
  * where they were found rather than against the app's own origin.
  */
 export function resolveArchivedPage(
-  index: ReadonlyMap<string, number>,
+  index: ReadonlyMap<string, ArchivedTarget>,
   href: string | undefined,
   base: string,
-): number | null {
+): ArchivedTarget | null {
   if (!href) return null;
   const key = canonicalize(href, base);
   if (!key) return null;

@@ -76,7 +76,10 @@ describe("buildArchiveIndex", () => {
     ]);
 
     expect(index.size).toBe(1);
-    expect(index.get(canonicalize("https://site.com/done") as string)).toBe(1);
+    expect(index.get(canonicalize("https://site.com/done") as string)).toEqual({
+      itemId: 10,
+      pageId: 1,
+    });
   });
 
   test("keeps the first page when two collapse to the same key", () => {
@@ -87,7 +90,10 @@ describe("buildArchiveIndex", () => {
     ]);
 
     expect(index.size).toBe(1);
-    expect(index.get(canonicalize("https://site.com/a") as string)).toBe(1);
+    expect(index.get(canonicalize("https://site.com/a") as string)).toEqual({
+      itemId: 10,
+      pageId: 1,
+    });
   });
 
   test("skips a page whose URL cannot be parsed", () => {
@@ -99,19 +105,21 @@ describe("buildArchiveIndex", () => {
 
 describe("resolveArchivedPage", () => {
   const index = buildArchiveIndex([
-    page({ id: 1, url: "https://docs.site.com/guide/intro" }),
-    page({ id: 2, url: "https://docs.site.com/reference/api" }),
+    page({ id: 1, itemId: 10, url: "https://docs.site.com/guide/intro" }),
+    page({ id: 2, itemId: 20, url: "https://docs.site.com/reference/api" }),
   ]);
   const base = "https://docs.site.com/guide/intro";
+  // Both ids travel together so each surface can address the page its own way.
+  const api = { itemId: 20, pageId: 2 };
 
   test("resolves an absolute link to an archived page", () => {
     expect(
       resolveArchivedPage(index, "https://docs.site.com/reference/api", base),
-    ).toBe(2);
+    ).toEqual(api);
   });
 
   test("resolves a relative link against the page being read", () => {
-    expect(resolveArchivedPage(index, "../reference/api", base)).toBe(2);
+    expect(resolveArchivedPage(index, "../reference/api", base)).toEqual(api);
   });
 
   test("resolves a link that only differs by fragment or trailing slash", () => {
@@ -121,7 +129,7 @@ describe("resolveArchivedPage", () => {
         "https://docs.site.com/reference/api/#auth",
         base,
       ),
-    ).toBe(2);
+    ).toEqual(api);
   });
 
   test("leaves a bare fragment alone rather than claiming the current page", () => {
@@ -144,7 +152,9 @@ describe("resolveArchivedPage", () => {
   });
 
   test("still resolves a fragment link that points at a different page", () => {
-    expect(resolveArchivedPage(index, "../reference/api#auth", base)).toBe(2);
+    expect(resolveArchivedPage(index, "../reference/api#auth", base)).toEqual(
+      api,
+    );
   });
 
   test("leaves a link to a page this crawl never archived alone", () => {

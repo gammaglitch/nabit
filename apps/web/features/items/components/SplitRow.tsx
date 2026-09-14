@@ -6,6 +6,7 @@ import { sourceColor, sourceLabel } from "@/features/shared/utils/source";
 import type { DisplayItem } from "../utils/item-helpers";
 import { type SortField, sortStamp } from "../utils/item-sort";
 import { RemovableTag } from "./RemovableTag";
+import { SiteBadge } from "./SiteBadge";
 import { StarButton } from "./StarButton";
 import type { TagPickerAnchor } from "./TagPicker";
 
@@ -82,6 +83,7 @@ export function SplitRow({
         >
           {sourceLabel(item.source)}
         </span>
+        <SiteBadge crawl={item.crawl} size="sm" />
         <span
           style={{
             fontFamily: "var(--mono-font)",

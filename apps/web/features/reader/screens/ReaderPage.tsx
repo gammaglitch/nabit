@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RemovableTag } from "@/features/items/components/RemovableTag";
 import {
   TagPicker,
@@ -22,6 +22,15 @@ import {
   sourceLabel,
   timeAgo,
 } from "@/features/shared/utils/source";
+import { SiteTree } from "@/features/sites/components/SiteTree";
+import { useArchiveLinks } from "@/features/sites/hooks/useArchiveLinks";
+import { useCrawl } from "@/features/sites/hooks/useCrawls";
+import {
+  buildSiteTree,
+  type CrawlPage,
+  flattenVisible,
+  isReadable,
+} from "@/features/sites/utils/tree";
 import { trpc } from "@/lib/trpc/react";
 import { ArticleChat } from "../components/ArticleChat";
 import { CommentTree } from "../components/CommentTree";
@@ -48,6 +57,67 @@ export default function ReaderPage({ id }: { id: number }) {
   );
   const tagsQuery = trpc.tags.list.useQuery();
 
+  // A crawled page is one of many, and the reader is where you land on it from
+  // the library. The tree, and links that stay inside the archive, are what
+  // make it browsable from here rather than only from /sites/<id>.
+  //
+  // `useCrawl` ignores a non-positive id, so this is a no-op for an ordinary
+  // item — which is every item that is not part of a crawl.
+  const crawl = detailQuery.data?.item.crawl ?? null;
+  const crawlQuery = useCrawl(crawl?.id ?? 0);
+  const crawlPages = useMemo(
+    () => crawlQuery.data?.pages ?? [],
+    [crawlQuery.data?.pages],
+  );
+  const tree = useMemo(() => buildSiteTree(crawlPages), [crawlPages]);
+
+  // Open by default, like the site browser: seeing the shape of the site is
+  // the point of having the rail at all.
+  const [treeOpen, setTreeOpen] = useState(true);
+  const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set());
+  const isExpanded = useCallback(
+    (pageId: number) => !collapsedIds.has(pageId),
+    [collapsedIds],
+  );
+  const toggleCollapsed = useCallback((pageId: number) => {
+    setCollapsedIds((current) => {
+      const next = new Set(current);
+      if (next.has(pageId)) next.delete(pageId);
+      else next.add(pageId);
+      return next;
+    });
+  }, []);
+  const visible = useMemo(
+    () => flattenVisible(tree, isExpanded),
+    [tree, isExpanded],
+  );
+
+  const currentPageId = crawl?.pageId ?? null;
+  const currentPage =
+    crawlPages.find((page) => page.id === currentPageId) ?? null;
+
+  const openPage = useCallback(
+    (page: CrawlPage) => {
+      if (page.itemId === null) return;
+      router.push(`/read/${page.itemId}`);
+    },
+    [router],
+  );
+
+  // Resolved against the crawl's own record of this page rather than the item's
+  // sourceUrl, so both surfaces use the same base and agree on which links are
+  // internal. Falls back while `crawl.get` is still in flight.
+  const resolveInternalHref = useArchiveLinks({
+    crawlId: crawl?.id ?? null,
+    currentUrl: currentPage?.url ?? detailQuery.data?.item.sourceUrl ?? null,
+    pages: crawlPages,
+    target: "reader",
+  });
+  const followInternalHref = useCallback(
+    (href: string) => router.push(href),
+    [router],
+  );
+
   const subjectItemId = detailQuery.data?.item.subjectItemId ?? null;
   useEffect(() => {
     if (subjectItemId !== null) {
@@ -64,6 +134,39 @@ export default function ReaderPage({ id }: { id: number }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [router, tagAnchor]);
+
+  // j/k walks the site the way it does in the site browser, in tree order and
+  // skipping pages with nothing to read. Bound only for a crawled page, so the
+  // keys stay free everywhere else, and never while the chat box has focus.
+  useEffect(() => {
+    if (currentPageId === null) return;
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "j" && event.key !== "k") return;
+      if (
+        document.activeElement instanceof HTMLInputElement ||
+        document.activeElement instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      const readable = visible.filter(isReadable);
+      if (readable.length === 0) return;
+      const current = readable.findIndex((page) => page.id === currentPageId);
+      const nextIndex =
+        event.key === "j"
+          ? Math.min(current + 1, readable.length - 1)
+          : Math.max(current - 1, 0);
+      const next = readable[current < 0 ? 0 : nextIndex];
+      if (next && next.id !== currentPageId) {
+        event.preventDefault();
+        openPage(next);
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [currentPageId, openPage, visible]);
 
   if (!Number.isFinite(id) || id <= 0) {
     return <FullMessage tone="error" text="[INVALID ITEM ID]" />;
@@ -101,6 +204,9 @@ export default function ReaderPage({ id }: { id: number }) {
   // attached article that is the linked item, not the thread itself.
   const bodyItemId = hasLinkedArticle && linkedItem ? linkedItem.id : raw.id;
   const srcCol = sourceColor(item.source);
+  // The rail needs a tree to show: a crawl whose pages have not arrived yet
+  // would otherwise take 300px to display nothing.
+  const showTree = raw.crawl !== null && treeOpen && tree.length > 0;
   const starred = isStarred(item.id);
   const comments = raw.comments;
   const hasOwnComments = comments.length > 0;
@@ -174,6 +280,38 @@ export default function ReaderPage({ id }: { id: number }) {
             }}
           >
             ⌂ {raw.crawl.label ?? "Site"}
+          </button>
+        )}
+        {raw.crawl && (
+          // The label says this is not a lone page; the button opens the tree
+          // that proves it. Distinct from the ⌂ button beside it, which leaves
+          // for the site's own page — where the crawl itself is managed.
+          <button
+            type="button"
+            aria-expanded={treeOpen}
+            onClick={() => setTreeOpen((open) => !open)}
+            title={
+              treeOpen
+                ? "Hide the site tree"
+                : `Show the ${raw.crawl.pageCount} archived pages of this site`
+            }
+            style={{
+              fontFamily: "var(--mono-font)",
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: treeOpen ? "var(--accent)" : "var(--ink-2)",
+              border: `1px solid ${treeOpen ? "var(--accent)" : "var(--rule)"}`,
+              padding: "5px 10px",
+              background: "transparent",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              whiteSpace: "nowrap",
+            }}
+          >
+            ☰ Site · {raw.crawl.pageCount} pages
+            {raw.crawl.pagesQueued > 0 && " · archiving"}
           </button>
         )}
         <div
@@ -307,11 +445,35 @@ export default function ReaderPage({ id }: { id: number }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0,1fr) minmax(0, 440px)",
+          gridTemplateColumns: showTree
+            ? "300px minmax(0,1fr) minmax(0, 440px)"
+            : "minmax(0,1fr) minmax(0, 440px)",
           height: "100%",
           overflow: "hidden",
         }}
       >
+        {showTree && (
+          <aside
+            style={{
+              borderRight: "1px solid var(--rule)",
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+              overflow: "hidden",
+              background: "var(--bg)",
+            }}
+          >
+            <nav aria-label="Site pages" style={{ flex: 1, overflowY: "auto" }}>
+              <SiteTree
+                isExpanded={isExpanded}
+                nodes={tree}
+                onSelect={openPage}
+                onToggle={toggleCollapsed}
+                selectedId={currentPageId}
+              />
+            </nav>
+          </aside>
+        )}
         <div
           style={{
             borderRight: "1px solid var(--rule)",
@@ -472,7 +634,15 @@ export default function ReaderPage({ id }: { id: number }) {
             )}
 
             {markdown.trim().length > 0 ? (
-              <MarkdownArticle markdown={markdown} />
+              raw.crawl ? (
+                <MarkdownArticle
+                  markdown={markdown}
+                  onFollowInternalHref={followInternalHref}
+                  resolveInternalHref={resolveInternalHref}
+                />
+              ) : (
+                <MarkdownArticle markdown={markdown} />
+              )
             ) : !isThread ? (
               <p
                 style={{
