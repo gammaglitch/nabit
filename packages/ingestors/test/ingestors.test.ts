@@ -113,3 +113,64 @@ describe("tweet ingestor", () => {
     expect(extraction.externalId).toBe("123");
   });
 });
+
+describe("thread ingestors", () => {
+  test("keep a Hacker News story's article URL in metadata", async () => {
+    const extraction = await getIngestor("hacker_news").extract({
+      snapshot: {
+        body: JSON.stringify({
+          children: [],
+          id: 48756578,
+          title: "Herdr",
+          type: "story",
+          url: "https://herdr.dev/",
+        }),
+        contentType: "application/json",
+      },
+      url: "https://news.ycombinator.com/item?id=48756578",
+    });
+
+    expect(extraction.linkedUrls).toEqual(["https://herdr.dev/"]);
+    expect(extraction.metadata?.linkedUrl).toBe("https://herdr.dev/");
+  });
+
+  test("leave linkedUrl null for a text-only Hacker News post", async () => {
+    const extraction = await getIngestor("hacker_news").extract({
+      snapshot: {
+        body: JSON.stringify({ children: [], id: 1, text: "Ask HN: ..." }),
+        contentType: "application/json",
+      },
+      url: "https://news.ycombinator.com/item?id=1",
+    });
+
+    expect(extraction.metadata?.linkedUrl).toBeNull();
+  });
+
+  test("keep a reddit link post's article URL in metadata", async () => {
+    const extraction = await getIngestor("reddit").extract({
+      snapshot: {
+        body: JSON.stringify([
+          {
+            data: {
+              children: [
+                {
+                  data: {
+                    id: "abc123",
+                    is_self: false,
+                    permalink: "/r/programming/comments/abc123/demo/",
+                    url: "https://herdr.dev/",
+                  },
+                },
+              ],
+            },
+          },
+          { data: { children: [] } },
+        ]),
+        contentType: "application/json",
+      },
+      url: "https://reddit.com/r/programming/comments/abc123/demo",
+    });
+
+    expect(extraction.metadata?.linkedUrl).toBe("https://herdr.dev/");
+  });
+});

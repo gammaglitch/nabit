@@ -46,6 +46,13 @@ export function subredditFromMetadata(
   return typeof sub === "string" ? `r/${sub}` : null;
 }
 
+export function linkedUrlFromMetadata(
+  metadata: Record<string, unknown>,
+): string | null {
+  const url = metadata.linkedUrl;
+  return typeof url === "string" && url.length > 0 ? url : null;
+}
+
 export function scoreFromMetadata(
   metadata: Record<string, unknown>,
   source: NormalizedSource,

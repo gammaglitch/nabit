@@ -18,6 +18,7 @@ import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
 import { useStarred } from "@/features/shared/hooks/useStarred";
 import {
   hostname,
+  linkedUrlFromMetadata,
   sourceColor,
   sourceLabel,
   timeAgo,
@@ -192,6 +193,12 @@ export default function ReaderPage({ id }: { id: number }) {
   const isThread = item.source === "hn" || item.source === "reddit";
   const linkedItem = raw.linkedItem;
   const hasLinkedArticle = isThread && linkedItem !== null;
+  // The page a thread points at. The linked item only exists when ingest
+  // archived it as a new child, so fall back to the URL the extractor kept —
+  // it survives a failed fetch or an article that was already nabbed alone.
+  const articleUrl = isThread
+    ? (linkedItem?.sourceUrl ?? linkedUrlFromMetadata(raw.metadata))
+    : null;
   // Threads without a linked article show the post text in an "Original post"
   // blockquote (excerpt), so the main markdown slot is only used for the
   // attached article (threads) or the item's own extracted body (articles).
@@ -393,27 +400,14 @@ export default function ReaderPage({ id }: { id: number }) {
         >
           <Icon name="tag" size={12} /> Tag
         </button>
+        {/* A thread has two originals: the article it links to and the
+            discussion itself. "Source" alone would be ambiguous there. */}
+        {articleUrl && <ExternalLinkButton href={articleUrl} label="Article" />}
         {item.sourceUrl && (
-          <a
+          <ExternalLinkButton
             href={item.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              fontFamily: "var(--mono-font)",
-              fontSize: 11,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              color: "var(--ink-2)",
-              padding: "5px 10px",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              textDecoration: "none",
-              border: "1px solid transparent",
-            }}
-          >
-            <Icon name="external" size={12} /> Source
-          </a>
+            label={articleUrl ? "Thread" : "Source"}
+          />
         )}
         <ReextractButton
           disabled={isReextracting}
@@ -600,7 +594,7 @@ export default function ReaderPage({ id }: { id: number }) {
               </div>
             )}
 
-            {hasLinkedArticle && linkedItem && (
+            {articleUrl && (
               <div
                 style={{
                   borderLeft: "3px solid var(--accent)",
@@ -624,12 +618,30 @@ export default function ReaderPage({ id }: { id: number }) {
                 >
                   Linked article
                 </span>
-                <span style={{ color: "var(--ink-2)" }}>
-                  {linkedItem.title ?? linkedItem.sourceUrl ?? "Untitled"}
+                <a
+                  href={articleUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    color: "var(--ink-2)",
+                    textDecoration: "underline",
+                    textUnderlineOffset: 3,
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {linkedItem?.title ?? articleUrl}
+                </a>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  · {hostname(articleUrl)}
+                  <Icon name="external" size={10} />
                 </span>
-                {linkedItem.sourceUrl && (
-                  <span>· {hostname(linkedItem.sourceUrl)}</span>
-                )}
+                {!hasLinkedArticle && <span>· not archived</span>}
               </div>
             )}
 
@@ -740,6 +752,32 @@ export default function ReaderPage({ id }: { id: number }) {
         />
       )}
     </div>
+  );
+}
+
+function ExternalLinkButton({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={href}
+      style={{
+        fontFamily: "var(--mono-font)",
+        fontSize: 11,
+        letterSpacing: "0.06em",
+        textTransform: "uppercase",
+        color: "var(--ink-2)",
+        padding: "5px 10px",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        textDecoration: "none",
+        border: "1px solid transparent",
+      }}
+    >
+      <Icon name="external" size={12} /> {label}
+    </a>
   );
 }
 
