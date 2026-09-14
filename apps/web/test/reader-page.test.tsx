@@ -485,6 +485,86 @@ describe("ReaderPage", () => {
     ).toBeInTheDocument();
   });
 
+  test("a thread links out to both the article and the discussion", () => {
+    useQueryMock.mockReturnValue({
+      data: { item: detailItem },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    expect(screen.getByRole("link", { name: "Article" })).toHaveAttribute(
+      "href",
+      "https://jack.cab/blog/every-firefox-extension",
+    );
+    expect(screen.getByRole("link", { name: "Thread" })).toHaveAttribute(
+      "href",
+      "https://news.ycombinator.com/item?id=47730194",
+    );
+    expect(
+      screen.queryByRole("link", { name: "Source" }),
+    ).not.toBeInTheDocument();
+    // The banner above the archived body is the in-context way out.
+    expect(
+      screen.getByRole("link", { name: "Every Firefox Extension" }),
+    ).toHaveAttribute("href", "https://jack.cab/blog/every-firefox-extension");
+  });
+
+  test("falls back to the extractor's linkedUrl when the article isn't a linked item", () => {
+    useQueryMock.mockReturnValue({
+      data: {
+        item: {
+          ...detailItem,
+          linkedItem: null,
+          metadata: { linkedUrl: "https://herdr.dev/", points: 12 },
+        },
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    expect(screen.getByRole("link", { name: "Article" })).toHaveAttribute(
+      "href",
+      "https://herdr.dev/",
+    );
+    expect(
+      screen.getByRole("link", { name: "https://herdr.dev/" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("· not archived")).toBeInTheDocument();
+  });
+
+  test("a plain article keeps a single Source link", () => {
+    useQueryMock.mockReturnValue({
+      data: {
+        item: {
+          ...detailItem,
+          comments: [],
+          contentText: "Body.",
+          linkedItem: null,
+          // Only threads read linkedUrl; a stray key must not add a button.
+          metadata: { linkedUrl: "https://elsewhere.example/" },
+          sourceType: "webpage",
+          sourceUrl: "https://example.com/post",
+        },
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<ReaderPage id={1} />);
+
+    expect(screen.getByRole("link", { name: "Source" })).toHaveAttribute(
+      "href",
+      "https://example.com/post",
+    );
+    expect(
+      screen.queryByRole("link", { name: "Article" }),
+    ).not.toBeInTheDocument();
+  });
+
   test("surfaces a failed request instead of looking like it worked", async () => {
     mutateReextract.mockRejectedValue(new Error("boom"));
     useQueryMock.mockReturnValue({

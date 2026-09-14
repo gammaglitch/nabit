@@ -460,6 +460,8 @@ const redditIngestor: Ingestor = {
       extractorVersion: EXTRACTOR_VERSION,
       linkedUrls,
       metadata: {
+        // Kept for the reader, as on Hacker News posts.
+        linkedUrl: linkedUrls[0] ?? null,
         numComments:
           typeof post.num_comments === "number"
             ? post.num_comments
@@ -547,6 +549,9 @@ const hackerNewsIngestor: Ingestor = {
       linkedUrls,
       metadata: {
         childrenCount: comments.length,
+        // `linkedUrls` only lives through ingest; the reader needs the story's
+        // own URL even when that article never became a linked child item.
+        linkedUrl: linkedUrls[0] ?? null,
         points: typeof post.points === "number" ? post.points : null,
         type: firstString(post.type),
       },
