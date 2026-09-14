@@ -1,4 +1,8 @@
-import type { AuthUser } from "@repo/trpc";
+import {
+  type AuthUser,
+  EMAIL_NOT_ALLOWED_MESSAGE,
+  isUserAllowed,
+} from "@repo/trpc";
 import fp from "fastify-plugin";
 import {
   AuthConfigurationError,
@@ -12,7 +16,8 @@ const LOCAL_USER: AuthUser = {
   email: null,
   id: "auth-disabled",
   role: "admin",
-  tokenKind: "supabase",
+  tokenKind: "local",
+  userId: null,
 };
 
 export default fp(async (app) => {
@@ -27,8 +32,9 @@ export default fp(async (app) => {
       return;
     }
 
+    let user: AuthUser | null;
     try {
-      req.user = await verifyAuthHeader(req.headers.authorization);
+      user = await verifyAuthHeader(req.headers.authorization);
     } catch (error) {
       if (error instanceof AuthConfigurationError) {
         req.log.error(error, "supabase auth is not configured");
@@ -45,5 +51,32 @@ export default fp(async (app) => {
 
       throw error;
     }
+
+    if (!user) {
+      req.user = null;
+      return;
+    }
+
+    // Enforced here rather than per route: the tRPC middleware used to be the
+    // only place ALLOWED_EMAILS was checked, which left every REST route
+    // (/ingest, /chat, /export) open to any account the Supabase project would
+    // issue a token to. Checked before the user is resolved, too, so an
+    // account that is turned away never gets a `users` row.
+    if (!isUserAllowed(user, app.env.allowedEmails)) {
+      return reply.code(403).send({ message: EMAIL_NOT_ALLOWED_MESSAGE });
+    }
+
+    if (user.tokenKind === "supabase") {
+      user = {
+        ...user,
+        userId: await app.services.users.resolve({
+          email: user.email,
+          provider: "supabase",
+          subject: user.id,
+        }),
+      };
+    }
+
+    req.user = user;
   });
 });

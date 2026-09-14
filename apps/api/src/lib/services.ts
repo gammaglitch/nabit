@@ -10,6 +10,7 @@ import { HelloService } from "../modules/hello/service";
 import { IngestService } from "../modules/ingest/service";
 import { SettingsService } from "../modules/settings/service";
 import { TagService } from "../modules/tags/service";
+import { UserService } from "../modules/users/service";
 import type { AppEnv } from "./config/env";
 import type { AppEventBus } from "./event-bus";
 
@@ -24,6 +25,7 @@ export interface ServiceContainer extends TrpcServices {
   ingest: IngestService;
   settings: SettingsService;
   tags: TagService;
+  users: UserService;
 }
 
 type MakeServicesOptions = {
@@ -70,5 +72,6 @@ export function makeServices(options: MakeServicesOptions): ServiceContainer {
     ingest,
     settings,
     tags: new TagService(options.database),
+    users: new UserService(options.database),
   };
 }

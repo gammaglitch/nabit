@@ -44,7 +44,8 @@ export function createAuthHeaderVerifier(env: AppEnv) {
         email: null,
         id: "api-token",
         role: "admin" as AuthUserRole,
-        tokenKind: "supabase" as const,
+        tokenKind: "api-token" as const,
+        userId: null,
       };
     }
 
@@ -93,6 +94,9 @@ function mapSupabaseJwtPayloadToAuthUser(payload: JWTPayload): AuthUser {
     id: claims.sub,
     role: getAuthUserRole(claims),
     tokenKind: "supabase",
+    // Filled in by the auth plugin once the email gate has passed — resolving
+    // it needs the database, which token verification has no business touching.
+    userId: null,
   };
 }
 

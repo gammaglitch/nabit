@@ -167,7 +167,7 @@ docker build \
 | `SUPABASE_JWT_AUDIENCE` | no | Defaults to `authenticated`. |
 | `SUPABASE_JWT_ISSUER` | no | Override if your Supabase instance uses a non-standard issuer. |
 | `SUPABASE_JWKS_URL` | no | Override if you host your own JWKS. |
-| `ALLOWED_EMAILS` | when auth required | Comma-separated list of emails permitted to sign in. Ignored when `AUTH_REQUIRED=false`. |
+| `ALLOWED_EMAILS` | when auth required | Comma-separated list of emails permitted to sign in, matched case-insensitively. Enforced on every route (tRPC, REST, WebSocket). Each admitted login becomes a nabit user, and the items they nab are recorded against them. Leave empty to allow any Supabase account. Does not apply to `API_TOKEN` callers, whose submissions go unattributed, or when `AUTH_REQUIRED=false`. |
 | `API_TOKEN` | no | Static bearer token for browser-extension / automation calls that don't carry a Supabase JWT. |
 | `AUTH_REQUIRED` | no | Set to `false` to run single-user: the API skips JWT verification and treats every request as an admin. Only safe behind a trusted network boundary (localhost, VPN, Tailscale). Defaults to `true`. Pair with `NEXT_PUBLIC_AUTH_REQUIRED=false` on the web. |
 | `OPENROUTER_API_KEY` | no | Enables the reader's **Ask** panel, which streams answers about the open article from an LLM. Leave unset to keep the feature off — `POST /chat` then returns 503 and the rest of the API is unaffected. |

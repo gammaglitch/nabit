@@ -1,3 +1,4 @@
+import type { RequestActor } from "@repo/trpc";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { DatabaseState } from "../../db/client";
@@ -90,7 +91,7 @@ export class CrawlService {
    * Create a crawl and queue its root page. Returns as soon as the root is
    * queued — the fan-out happens on the worker, one page at a time.
    */
-  async start(input: StartCrawlInput) {
+  async start(input: StartCrawlInput, actor: RequestActor) {
     const db = requireDatabase(this.database);
 
     let normalizedRoot: string;
@@ -154,6 +155,7 @@ export class CrawlService {
           label: input.label ?? null,
           maxDepth,
           maxPages,
+          createdByUserId: actor.userId,
           pagesQueued: 1,
           pathPrefix,
           rootUrl: normalizedRoot,
@@ -177,11 +179,14 @@ export class CrawlService {
       return { crawl: createdCrawl, rootPage: createdRoot };
     });
 
-    await this.ingest.enqueue({
-      crawlId: crawl.id,
-      crawlPageId: rootPage.id,
-      url: normalizedRoot,
-    });
+    await this.ingest.enqueue(
+      {
+        crawlId: crawl.id,
+        crawlPageId: rootPage.id,
+        url: normalizedRoot,
+      },
+      { userId: crawl.createdByUserId },
+    );
 
     return { crawl: this.toCrawl(crawl), rootPageId: rootPage.id };
   }
@@ -378,7 +383,7 @@ export class CrawlService {
    */
   private async scheduleFetches(
     db: Database,
-    crawl: Pick<CrawlRow, "id">,
+    crawl: Pick<CrawlRow, "createdByUserId" | "id">,
     pages: Array<{ id: number; url: string }>,
   ) {
     const [{ queuedUntil }] = (await db.execute(sql`
@@ -396,12 +401,16 @@ export class CrawlService {
         DEFAULT_CRAWL_DELAY_MS,
       );
       cursor += delay;
-      await this.ingest.enqueue({
-        crawlId: crawl.id,
-        crawlPageId: page.id,
-        runAfter: new Date(cursor),
-        url: page.url,
-      });
+      // Every page of a crawl is credited to whoever started it.
+      await this.ingest.enqueue(
+        {
+          crawlId: crawl.id,
+          crawlPageId: page.id,
+          runAfter: new Date(cursor),
+          url: page.url,
+        },
+        { userId: crawl.createdByUserId },
+      );
     }
   }
 

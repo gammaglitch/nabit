@@ -23,11 +23,56 @@ const tsvector = customType<{ data: string }>({
   },
 });
 
-export const usersTable = schema.table("users", (t) => ({
-  id: t.bigserial({ mode: "number" }).primaryKey(),
-  email: t.text().notNull().unique(),
-  name: t.text().notNull(),
-}));
+// nabit's own notion of a person. Everything that records who did something
+// points here by `id`, never at an auth provider's subject or at an email, so
+// swapping Supabase for another provider only means relinking
+// `user_identities` — none of the tables that reference a user change.
+//
+// `email` is a display copy of whatever the provider last reported. It is
+// deliberately not unique: providers disagree on whether it is verified, and a
+// deleted-and-recreated Supabase account comes back with a new subject but the
+// same address, which must not make that person unable to log in.
+export const usersTable = schema.table(
+  "users",
+  (t) => ({
+    id: t.bigserial({ mode: "number" }).primaryKey(),
+    email: t.text(),
+    name: t.text(),
+    createdAt: t
+      .timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: t
+      .timestamp("last_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }),
+  (table) => [index("idx_users_email").on(table.email)],
+);
+
+// Maps an auth provider's account onto a nabit user. Created on first login
+// (see modules/users/service.ts). The (provider, subject) pair is the only
+// stable handle a provider gives us — for Supabase that is the JWT `sub`.
+export const userIdentitiesTable = schema.table(
+  "user_identities",
+  (t) => ({
+    provider: t.text("provider").notNull(),
+    subject: t.text("subject").notNull(),
+    userId: t
+      .bigint("user_id", { mode: "number" })
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    email: t.text("email"),
+    createdAt: t
+      .timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }),
+  (table) => [
+    primaryKey({ columns: [table.provider, table.subject] }),
+    index("idx_user_identities_user_id").on(table.userId),
+  ],
+);
 
 export const itemsTable = schema.table(
   "items",
@@ -144,6 +189,11 @@ export const crawlsTable = schema.table(
     pagesDone: t.integer("pages_done").notNull().default(0),
     pagesFailed: t.integer("pages_failed").notNull().default(0),
     pagesQueued: t.integer("pages_queued").notNull().default(0),
+    // Null for crawls started before users were recorded, and for callers
+    // with no nabit user (API token, AUTH_REQUIRED=false).
+    createdByUserId: t
+      .bigint("created_by_user_id", { mode: "number" })
+      .references(() => usersTable.id, { onDelete: "set null" }),
     createdAt: t
       .timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -242,6 +292,11 @@ export const ingestJobsTable = schema.table(
     // no way to look up an id; ensureItem creates any tag that doesn't exist
     // yet. Null for every job queued without tags, which is most of them.
     tags: t.jsonb("tags").$type<string[]>(),
+    // Carried through to item_submissions once the item lands. Crawl jobs
+    // inherit the crawl's creator. Null when the caller has no nabit user.
+    submittedByUserId: t
+      .bigint("submitted_by_user_id", { mode: "number" })
+      .references(() => usersTable.id, { onDelete: "set null" }),
     // Set only for jobs a crawl queued. Their presence is what tells
     // processNextJob to hand the page's outbound links to CrawlService.expand
     // once the ingest lands; an ordinary ingest has both null and expands
@@ -390,6 +445,36 @@ export const itemTagsTable = schema.table(
       .references(() => tagsTable.id, { onDelete: "cascade" }),
   }),
   (table) => [primaryKey({ columns: [table.itemId, table.tagId] })],
+);
+
+// Who nabbed an item, one row per person. A join table rather than a column on
+// `items` because items are shared: `uq_items_source_external` means two
+// people saving the same URL get the same row, and a single `submitted_by`
+// would only remember whichever of them came last.
+export const itemSubmissionsTable = schema.table(
+  "item_submissions",
+  (t) => ({
+    itemId: t
+      .bigint("item_id", { mode: "number" })
+      .notNull()
+      .references(() => itemsTable.id, { onDelete: "cascade" }),
+    userId: t
+      .bigint("user_id", { mode: "number" })
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    firstSubmittedAt: t
+      .timestamp("first_submitted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSubmittedAt: t
+      .timestamp("last_submitted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }),
+  (table) => [
+    primaryKey({ columns: [table.itemId, table.userId] }),
+    index("idx_item_submissions_user_id").on(table.userId),
+  ],
 );
 
 export const commentTagsTable = schema.table(

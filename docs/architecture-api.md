@@ -134,6 +134,10 @@ Current auth flow:
 - they send the access token as `Authorization: Bearer <token>`
 - the API verifies the JWT against Supabase JWKS
 - Fastify request auth state is then available to tRPC procedures
+- `ALLOWED_EMAILS` is enforced in the auth plugin, so it covers REST routes as well as tRPC; the `API_TOKEN` and auth-disabled callers are exempt
+- a Supabase login that passes is mapped to a nabit user (`users` + `user_identities`, see `modules/users`) and exposed as `AuthUser.userId`
+
+Record who did something by `users.id`, never by the provider subject or email. That keeps a future move off Supabase to relinking `user_identities`. Submissions are recorded in `ingest_jobs.submitted_by_user_id`, `crawls.created_by_user_id` and `item_submissions`.
 
 Keep auth verification in `apps/api`. Do not move JWT verification into shared frontend packages.
 

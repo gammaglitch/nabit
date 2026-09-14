@@ -17,7 +17,7 @@ export const crawlRouter = router({
     .input(StartCrawlInput)
     .output(StartCrawlOutput)
     .mutation(async ({ ctx, input }) => {
-      return ctx.services.crawl.start(input);
+      return ctx.services.crawl.start(input, { userId: ctx.user.userId });
     }),
   list: authedProcedure
     .input(ListCrawlsInput)
