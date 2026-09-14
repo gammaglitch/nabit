@@ -30,19 +30,21 @@ export const ingestRouter = router({
     .input(IngestInput)
     .output(IngestOutput)
     .mutation(async ({ ctx, input }) => {
-      return ctx.services.ingest.ingest(input);
+      return ctx.services.ingest.ingest(input, { userId: ctx.user.userId });
     }),
   batch: authedProcedure
     .input(IngestBatchInput)
     .output(IngestBatchOutput)
     .mutation(async ({ ctx, input }) => {
-      return ctx.services.ingest.ingestBatch(input);
+      return ctx.services.ingest.ingestBatch(input, {
+        userId: ctx.user.userId,
+      });
     }),
   enqueue: authedProcedure
     .input(EnqueueIngestInput)
     .output(EnqueueIngestOutput)
     .mutation(async ({ ctx, input }) => {
-      return ctx.services.ingest.enqueue(input);
+      return ctx.services.ingest.enqueue(input, { userId: ctx.user.userId });
     }),
   job: authedProcedure
     .input(GetIngestJobInput)

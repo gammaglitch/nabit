@@ -1,4 +1,4 @@
-import type { TrpcServices } from "@repo/trpc";
+import type { RequestActor, TrpcServices } from "@repo/trpc";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from "drizzle-orm";
 import type { DatabaseState } from "../../db/client";
@@ -8,6 +8,7 @@ import {
   crawlsTable,
   extractionsTable,
   ingestJobsTable,
+  itemSubmissionsTable,
   itemsTable,
   itemTagsTable,
   rawSnapshotsTable,
@@ -96,6 +97,7 @@ type ClaimedIngestJob = {
   ingestor: string | null;
   maxAttempts: number;
   payload: unknown;
+  submittedByUserId: number | null;
   tags: string[] | null;
   url: string;
 };
@@ -105,6 +107,7 @@ type InternalIngestInput = {
   ingestor?: IngestorName | null;
   payload?: unknown;
   skipLinkedUrls?: boolean;
+  submittedByUserId: number | null;
   tags?: string[] | null;
   url: string;
 };
@@ -327,15 +330,22 @@ export class IngestService implements IngestServiceContract {
     private readonly assets: AssetService | null = null,
   ) {}
 
-  async ingest(input: {
-    digestOptIn?: boolean;
-    ingestor?: IngestorName | null;
-    payload?: unknown;
-    tags?: string[] | null;
-    url: string;
-  }): Promise<IngestResult> {
+  async ingest(
+    input: {
+      digestOptIn?: boolean;
+      ingestor?: IngestorName | null;
+      payload?: unknown;
+      tags?: string[] | null;
+      url: string;
+    },
+    actor: RequestActor,
+  ): Promise<IngestResult> {
     return toPublicResult(
-      await this.ingestInternal({ ...input, skipLinkedUrls: false }),
+      await this.ingestInternal({
+        ...input,
+        skipLinkedUrls: false,
+        submittedByUserId: actor.userId,
+      }),
     );
   }
 
@@ -350,16 +360,19 @@ export class IngestService implements IngestServiceContract {
     this.crawlHooks = hooks;
   }
 
-  async enqueue(input: {
-    crawlId?: number | null;
-    crawlPageId?: number | null;
-    digestOptIn?: boolean;
-    ingestor?: IngestorName | null;
-    payload?: unknown;
-    runAfter?: Date;
-    tags?: string[] | null;
-    url: string;
-  }) {
+  async enqueue(
+    input: {
+      crawlId?: number | null;
+      crawlPageId?: number | null;
+      digestOptIn?: boolean;
+      ingestor?: IngestorName | null;
+      payload?: unknown;
+      runAfter?: Date;
+      tags?: string[] | null;
+      url: string;
+    },
+    actor: RequestActor,
+  ) {
     const db = requireDatabase(this.database);
     const requestedUrl = normalizeSourceUrl(input.url);
     const ingestorName = resolveIngestorName(
@@ -379,6 +392,11 @@ export class IngestService implements IngestServiceContract {
     // reuses the pending job, so the new tag is not applied. Once the job has
     // finished, a re-import queues fresh and does tag it.
     //
+    // Jobs also dedup per submitter. A job records one submitter, so folding a
+    // second person's enqueue into it would leave them uncredited for the item
+    // it produces; two people nabbing the same URL within seconds of each
+    // other is rare enough that the duplicate fetch doesn't matter.
+    //
     // Crawl jobs dedup within their own crawl only. Two crawls that overlap
     // would otherwise share one job, and only the crawl that happened to own
     // it would ever get the page's links back — the other would silently stop
@@ -393,6 +411,9 @@ export class IngestService implements IngestServiceContract {
           input.crawlId == null
             ? isNull(ingestJobsTable.crawlId)
             : eq(ingestJobsTable.crawlId, input.crawlId),
+          actor.userId === null
+            ? isNull(ingestJobsTable.submittedByUserId)
+            : eq(ingestJobsTable.submittedByUserId, actor.userId),
         ),
       )
       .orderBy(desc(ingestJobsTable.createdAt))
@@ -414,6 +435,7 @@ export class IngestService implements IngestServiceContract {
         // in a sleep; the claim query already filters on `run_after <= now()`.
         runAfter: input.runAfter ?? new Date(),
         status: "queued",
+        submittedByUserId: actor.userId,
         tags: normalizeTagNames(input.tags),
         url: requestedUrl,
       })
@@ -524,6 +546,7 @@ export class IngestService implements IngestServiceContract {
         payload,
         digest_opt_in as "digestOptIn",
         tags,
+        submitted_by_user_id as "submittedByUserId",
         crawl_id as "crawlId",
         crawl_page_id as "crawlPageId",
         attempts,
@@ -556,6 +579,10 @@ export class IngestService implements IngestServiceContract {
         ingestor: job.ingestor as IngestorName | null,
         payload: job.payload,
         skipLinkedUrls: false,
+        // `db.execute` skips Drizzle's column mappers, and postgres-js hands
+        // bigint back as a string.
+        submittedByUserId:
+          job.submittedByUserId === null ? null : Number(job.submittedByUserId),
         tags: job.tags,
         url: job.url,
       });
@@ -761,6 +788,7 @@ export class IngestService implements IngestServiceContract {
       digestOptIn: input.digestOptIn ?? false,
       sourceUrl: normalizedUrl,
       subjectItemId: null,
+      submittedByUserId: input.submittedByUserId,
       tags: input.tags ?? null,
     });
 
@@ -805,9 +833,11 @@ export class IngestService implements IngestServiceContract {
         // enrolls an item in paid LLM work, so it stays narrow; a tag names a
         // batch of reading, and the article an HN thread points at is squarely
         // part of that batch. Tagging an import and then not finding the
-        // articles under that tag would be the surprising outcome.
+        // articles under that tag would be the surprising outcome. The
+        // submitter is inherited for the same reason.
         sourceItem = await this.ingestInternal({
           skipLinkedUrls: true,
+          submittedByUserId: input.submittedByUserId,
           tags: input.tags,
           url: linkedUrl,
         });
@@ -862,13 +892,16 @@ export class IngestService implements IngestServiceContract {
     };
   }
 
-  async ingestBatch(input: {
-    items: Array<Parameters<IngestService["ingest"]>[0]>;
-    tags?: string[] | null;
-  }) {
+  async ingestBatch(
+    input: {
+      items: Array<Parameters<IngestService["ingest"]>[0]>;
+      tags?: string[] | null;
+    },
+    actor: RequestActor,
+  ) {
     const results = [];
     for (const item of input.items) {
-      results.push(await this.ingest(mergeBatchTags(item, input.tags)));
+      results.push(await this.ingest(mergeBatchTags(item, input.tags), actor));
     }
     return { results };
   }
@@ -1431,6 +1464,7 @@ export class IngestService implements IngestServiceContract {
     identity: ItemIdentity & {
       digestOptIn: boolean;
       subjectItemId: number | null;
+      submittedByUserId: number | null;
       tags: string[] | null;
     },
   ) {
@@ -1474,6 +1508,11 @@ export class IngestService implements IngestServiceContract {
       // an already-archived favorite under a tag is exactly when you want the
       // tag to stick.
       await this.applyTags(db, existing[0].id, identity.tags);
+      await this.recordSubmission(
+        db,
+        existing[0].id,
+        identity.submittedByUserId,
+      );
 
       return {
         created: false,
@@ -1494,6 +1533,7 @@ export class IngestService implements IngestServiceContract {
       .returning({ id: itemsTable.id });
 
     await this.applyTags(db, item.id, identity.tags);
+    await this.recordSubmission(db, item.id, identity.submittedByUserId);
 
     return {
       created: true,
@@ -1543,6 +1583,28 @@ export class IngestService implements IngestServiceContract {
       .insert(itemTagsTable)
       .values(rows.map((row) => ({ itemId, tagId: row.id })))
       .onConflictDoNothing();
+  }
+
+  /**
+   * Notes that a user nabbed an item. Re-nabbing only moves
+   * `last_submitted_at`, so the row keeps when they first saved it.
+   */
+  private async recordSubmission(
+    db: Database,
+    itemId: number,
+    userId: number | null,
+  ) {
+    if (userId === null) {
+      return;
+    }
+
+    await db
+      .insert(itemSubmissionsTable)
+      .values({ itemId, userId })
+      .onConflictDoUpdate({
+        set: { lastSubmittedAt: new Date() },
+        target: [itemSubmissionsTable.itemId, itemSubmissionsTable.userId],
+      });
   }
 
   private async processExtractionAssets(

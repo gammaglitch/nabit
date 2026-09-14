@@ -70,15 +70,29 @@ export type AuthUserRole = "admin" | "user";
 
 export interface AuthUser {
   email: string | null;
+  // The auth provider's subject (Supabase `sub`), or a fixed id for the API
+  // token and auth-disabled callers. Not stable across providers — record
+  // `userId` instead.
   id: string;
   role: AuthUserRole;
-  tokenKind: "supabase";
+  tokenKind: "api-token" | "local" | "supabase";
+  // nabit's own user id (users.id). Null for callers that are not a person:
+  // the shared API token and the synthetic AUTH_REQUIRED=false user.
+  userId: number | null;
+}
+
+// Who is acting on a request, as services record it. Kept apart from AuthUser
+// so internal callers (a crawl queueing its pages) can attribute work without
+// having to fake a whole authenticated user.
+export interface RequestActor {
+  userId: number | null;
 }
 
 export interface TrpcServices {
   crawl: {
     start(
       input: StartCrawlInputDTO,
+      actor: RequestActor,
     ): StartCrawlOutputDTO | Promise<StartCrawlOutputDTO>;
     list(
       input: ListCrawlsInputDTO,
@@ -124,12 +138,17 @@ export interface TrpcServices {
     }): PrivateHelloOutputDTO | Promise<PrivateHelloOutputDTO>;
   };
   ingest: {
-    ingest(input: IngestInputDTO): IngestOutputDTO | Promise<IngestOutputDTO>;
+    ingest(
+      input: IngestInputDTO,
+      actor: RequestActor,
+    ): IngestOutputDTO | Promise<IngestOutputDTO>;
     ingestBatch(
       input: IngestBatchInputDTO,
+      actor: RequestActor,
     ): IngestBatchOutputDTO | Promise<IngestBatchOutputDTO>;
     enqueue(
       input: EnqueueIngestInputDTO,
+      actor: RequestActor,
     ): EnqueueIngestOutputDTO | Promise<EnqueueIngestOutputDTO>;
     getJob(
       input: GetIngestJobInputDTO,

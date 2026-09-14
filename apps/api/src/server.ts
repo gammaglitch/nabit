@@ -169,12 +169,15 @@ export async function buildApp() {
       });
     }
 
-    const result = await app.services.ingest.enqueue({
-      ingestor: body.ingestor ?? null,
-      payload: body.payload,
-      tags: body.tags ?? null,
-      url: body.url,
-    });
+    const result = await app.services.ingest.enqueue(
+      {
+        ingestor: body.ingestor ?? null,
+        payload: body.payload,
+        tags: body.tags ?? null,
+        url: body.url,
+      },
+      { userId: req.user.userId },
+    );
 
     return reply.status(202).send(result);
   });
@@ -194,14 +197,17 @@ export async function buildApp() {
 
       const results = [];
       for (const item of items) {
-        const result = await app.services.ingest.enqueue({
-          ingestor: item.ingestor ?? null,
-          payload: item.payload,
-          // Batch-level tags apply to every item, on top of its own — a bulk
-          // import sends one tag, not one per entry.
-          tags: [...(item.tags ?? []), ...(req.body?.tags ?? [])],
-          url: item.url,
-        });
+        const result = await app.services.ingest.enqueue(
+          {
+            ingestor: item.ingestor ?? null,
+            payload: item.payload,
+            // Batch-level tags apply to every item, on top of its own — a bulk
+            // import sends one tag, not one per entry.
+            tags: [...(item.tags ?? []), ...(req.body?.tags ?? [])],
+            url: item.url,
+          },
+          { userId: req.user.userId },
+        );
         results.push(result);
       }
 
