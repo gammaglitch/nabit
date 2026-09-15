@@ -1,0 +1,44 @@
+# Optional Discord bot overlay.
+#
+#   docker compose -f compose.yml -f compose.discord.yml up -d
+#
+# Runs the `!nab <url>` / `/nab` bot from `apps/discord-bot`, which posts
+# URLs to the API's `/ingest` endpoint. Kept out of `compose.yml` because it
+# is opt-in: the bot exits non-zero without Discord credentials, so folding
+# it into the base stack would crash-loop every deployment that has none.
+#
+# The bot talks to `api` over the compose network and is not published, so
+# it needs no ports and no reverse-proxy wiring.
+#
+# Fill in DISCORD_TOKEN / DISCORD_CLIENT_ID in `.env`; see `.env.example`.
+
+services:
+  discord-bot:
+    build:
+      context: .
+      dockerfile: docker/discord-bot.Dockerfile
+    image: nabit-discord-bot:local
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    # No `env_file: .env` on purpose. This is the one service that needs
+    # neither database credentials nor Supabase keys, so it gets an explicit
+    # allowlist instead of the whole file. Values still interpolate from
+    # `.env` — that is how compose resolves `${...}` regardless.
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?DISCORD_TOKEN is required when using compose.discord.yml}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?DISCORD_CLIENT_ID is required when using compose.discord.yml}
+
+      # Service name, not a published port: the bot reaches the API inside
+      # the compose network, so this stays correct whatever you bind on the
+      # host. Override only when pointing the bot at a remote nabit.
+      NABIT_API_URL: ${NABIT_API_URL:-http://api:3001}
+
+      # The bot authenticates with the static API_TOKEN — it has no Supabase
+      # session. Defaults to the same value the API validates so the two
+      # cannot drift; set NABIT_API_TOKEN explicitly only when the bot points
+      # at a different deployment.
+      NABIT_API_TOKEN: ${NABIT_API_TOKEN:-${API_TOKEN:?API_TOKEN (or NABIT_API_TOKEN) is required when using compose.discord.yml}}
+
+      TZ: ${TZ:-UTC}

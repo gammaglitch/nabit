@@ -1,14 +1,26 @@
+# Optional hosted-Postgres overlay.
+#
+#   docker compose -f compose.yml -f compose.hosted-db.yml up -d
+#
+# Parks the local `db` container behind a profile and points `api` and
+# `ingest-worker` at an external DATABASE_URL instead.
+
 services:
   db:
     profiles:
       - local-only
 
   api:
-    depends_on: {}
+    # `!reset null`, not `{}`. Compose merges mappings across files, so an
+    # empty map leaves compose.yml's `db: {condition: service_healthy}`
+    # in place — and `db` is profile-gated above, so the project fails to
+    # validate with "depends on undefined service db". Only `!reset` drops
+    # the inherited key.
+    depends_on: !reset null
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
 
   ingest-worker:
-    depends_on: {}
+    depends_on: !reset null
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
