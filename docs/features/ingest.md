@@ -12,7 +12,7 @@ How URLs become items in `nabit`. This doc reflects the code in `apps/api/src/mo
 
 REST handlers live in `apps/api/src/server.ts`; the tRPC router is in `packages/trpc/src/modules/ingest/router.ts`.
 
-Auth accepts either a Supabase JWT or the static `API_TOKEN` env var (used by the tampermonkey scripts and the discord bot). See `apps/api/src/lib/auth.ts`.
+Auth accepts either a Better Auth session token or the static `API_TOKEN` env var (used by the tampermonkey scripts and the discord bot). See `apps/api/src/lib/auth.ts`.
 
 ## The pipeline
 

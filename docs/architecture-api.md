@@ -130,16 +130,15 @@ Plain Fastify routes like `/healthz` belong in `apps/api`, not in `packages/trpc
 
 Current auth flow:
 
-- web/mobile sign in through Supabase
-- they send the access token as `Authorization: Bearer <token>`
-- the API verifies the JWT against Supabase JWKS
-- Fastify request auth state is then available to tRPC procedures
-- `ALLOWED_EMAILS` is enforced in the auth plugin, so it covers REST routes as well as tRPC; the `API_TOKEN` and auth-disabled callers are exempt
-- a Supabase login that passes is mapped to a nabit user (`users` + `user_identities`, see `modules/users`) and exposed as `AuthUser.userId`
+- the API runs Better Auth itself (`lib/better-auth.ts`, mounted at `/api/auth/*` by `plugins/better-auth.ts`), email + password only, storing accounts and sessions in the `auth_*` tables
+- sign-in returns a session token in the `set-auth-token` header (bearer plugin); clients send it back as `Authorization: Bearer <token>`
+- the auth plugin (`plugins/auth.ts`) asks Better Auth for the session behind each bearer token, or accepts the static `API_TOKEN`; the result is `req.user`, which tRPC procedures read from context
+- `ALLOWED_EMAILS` gates sign-up (a database hook in `lib/better-auth.ts`; no list means no sign-ups) and every request (the auth plugin, covering REST as well as tRPC); the `API_TOKEN` and auth-disabled callers are exempt
+- a session that passes is mapped to a nabit user (`users` + `user_identities` under provider `better-auth`, see `modules/users`) and exposed as `AuthUser.userId`
 
-Record who did something by `users.id`, never by the provider subject or email. That keeps a future move off Supabase to relinking `user_identities`. Submissions are recorded in `ingest_jobs.submitted_by_user_id`, `crawls.created_by_user_id` and `item_submissions`.
+Record who did something by `users.id`, never by the Better Auth user id or email. `users` stays nabit's own record of a person, so changing auth providers only means relinking `user_identities`; the move from Supabase to Better Auth left every table that references a user untouched. Submissions are recorded in `ingest_jobs.submitted_by_user_id`, `crawls.created_by_user_id` and `item_submissions`.
 
-Keep auth verification in `apps/api`. Do not move JWT verification into shared frontend packages.
+Keep auth verification in `apps/api`. Do not move session checks into shared frontend packages.
 
 ## Event Bus Shape
 

@@ -11,33 +11,28 @@ apps/web/
   app/
     layout.tsx
     page.tsx
-    auth/callback/page.tsx
+    login/page.tsx
   features/
-    auth/
-      components/
-        AuthPanel.tsx
-      hooks/
-        use-auth-panel.ts
-    hello/
-      components/
-        HelloPanel.tsx
-      hooks/
-        use-hello-panel.ts
-    home/
-      screens/
-        HomePage.tsx
+    items/
+    reader/
+    sites/
+    ...
   components/
     ui/
       button.tsx
       card.tsx
       input.tsx
+    auth-gate.tsx
     providers.tsx
   hooks/
-    use-browser-supabase-session.ts
+    use-session.ts
   lib/
-    supabase/
-      auth.ts
+    auth/
       client.ts
+      next-path.ts
+      required.ts
+      session-cookie.ts
+      token.ts
     trpc/
       client.ts
       react.ts
@@ -84,9 +79,9 @@ Use:
 
 Current examples:
 
-- `features/auth`
-- `features/hello`
-- `features/home`
+- `features/items`
+- `features/reader`
+- `features/sites`
 
 Keep route files thin and keep feature logic in these folders.
 
@@ -102,7 +97,7 @@ If a hook is used by more than one web feature, move it to `apps/web/hooks`.
 
 Current example:
 
-- `use-browser-supabase-session`
+- `use-session`
 
 ### `lib/trpc` owns client plumbing
 
@@ -114,12 +109,14 @@ Current responsibilities:
 
 Do not duplicate transport/header logic in route components.
 
-### `lib/supabase` owns web auth client wiring
+### `lib/auth` owns web auth client wiring
 
 Current responsibilities:
 
-- browser Supabase client
-- auth helpers for web callback/session behavior
+- the Better Auth client, talking to the API's `/api/auth` routes (`client.ts`)
+- the session token in localStorage, read by every call that sends `Authorization: Bearer` (`token.ts`)
+- the `nf-session` marker cookie that tells `proxy.ts` a session exists (`session-cookie.ts`)
+- where to return after sign-in (`next-path.ts`) and whether the gate is on at all (`required.ts`)
 
 Keep web-specific auth behavior here, not in shared packages.
 
