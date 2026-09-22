@@ -67,7 +67,11 @@ import type {
   DeleteTagOutputDTO,
   RemoveTagFromItemInputDTO,
   RemoveTagFromItemOutputDTO,
+  SuggestTagsInputDTO,
+  SuggestTagsOutputDTO,
   TagListOutputDTO,
+  UpdateTagInputDTO,
+  UpdateTagOutputDTO,
 } from "./modules/tags/dto";
 
 export type AuthUserRole = "admin" | "user";
@@ -188,8 +192,16 @@ export interface TrpcServices {
       input: UpdateChatSettingsInputDTO,
     ): UpdateChatSettingsOutputDTO | Promise<UpdateChatSettingsOutputDTO>;
   };
+  tagging: {
+    suggest(
+      input: SuggestTagsInputDTO,
+    ): SuggestTagsOutputDTO | Promise<SuggestTagsOutputDTO>;
+  };
   tags: {
     list(): TagListOutputDTO | Promise<TagListOutputDTO>;
+    update(
+      input: UpdateTagInputDTO,
+    ): UpdateTagOutputDTO | Promise<UpdateTagOutputDTO>;
     create(
       input: CreateTagInputDTO,
     ): CreateTagOutputDTO | Promise<CreateTagOutputDTO>;

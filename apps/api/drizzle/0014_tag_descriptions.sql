@@ -1,0 +1,1 @@
+ALTER TABLE "nabit"."tags" ADD COLUMN "description" text;
