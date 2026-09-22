@@ -99,6 +99,13 @@
       "when": 1789310083483,
       "tag": "0013_multi_user_attribution",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790104159380,
+      "tag": "0014_better_auth",
+      "breakpoints": true
     }
   ]
 }
