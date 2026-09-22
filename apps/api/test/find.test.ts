@@ -1,12 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "../src/lib/config/env";
+import { JEV_MODEL, JEV_STATE_CHARS, JevClient } from "../src/lib/jev";
 import {
   batchPassages,
-  FIND_MODEL,
   FindService,
   MAX_SCREEN_BATCHES,
-  readChoice,
-  SCREEN_BATCH_CHARS,
   SCREEN_BATCH_PASSAGES,
   splitSentences,
 } from "../src/modules/find/service";
@@ -108,7 +106,7 @@ describe("batchPassages", () => {
       1,
     ]);
 
-    const big = "y".repeat(SCREEN_BATCH_CHARS / 2 + 1);
+    const big = "y".repeat(JEV_STATE_CHARS / 2 + 1);
     expect(batchPassages([big, big, big])).toEqual([[0], [1], [2]]);
   });
 });
@@ -127,12 +125,19 @@ describe("splitSentences", () => {
   });
 });
 
-describe("readChoice", () => {
-  test("rejects an answer outside the options it was asked", () => {
+describe("JevClient answers", () => {
+  const jev = new JevClient("test-key");
+
+  test("rejects a choice outside the options it was asked", () => {
     expect(() =>
-      readChoice(choice("maybe", { maybe: 1 }), ["match", "irrelevant"]),
+      jev.readChoice(choice("maybe", { maybe: 1 }), ["match", "irrelevant"]),
     ).toThrow("an option it was not offered");
-    expect(() => readChoice(undefined, ["match"])).toThrow();
+    expect(() => jev.readChoice(undefined, ["match"])).toThrow();
+  });
+
+  test("reads a yes/no answer as the probability of true", () => {
+    expect(jev.readNoul({ noul: 0.91, type: "noul" })).toBe(0.91);
+    expect(() => jev.readNoul({ noul: true })).toThrow();
   });
 });
 
@@ -169,7 +174,7 @@ describe("FindService.search", () => {
     expect(new Headers(screen?.init.headers).get("Authorization")).toBe(
       "Bearer test-key",
     );
-    expect(screen?.body.model).toBe(FIND_MODEL);
+    expect(screen?.body.model).toBe(JEV_MODEL);
     // Each passage rides in its own question; the empty one is never sent.
     expect(screen?.body.state).toEqual({ query: "how long does it last" });
     expect(Object.keys(screen?.body.questions ?? {})).toEqual([

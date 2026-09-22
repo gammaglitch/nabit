@@ -1,4 +1,5 @@
 import type { TrpcServices } from "@repo/trpc";
+import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import type { DatabaseState } from "../../db/client";
 import { itemTagsTable, tagsTable } from "../../db/schema";
@@ -14,6 +15,12 @@ function requireDatabase(database: DatabaseState): Database {
   return database.db;
 }
 
+/** Blank is stored as NULL, so "no description" has one representation. */
+function cleanDescription(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
 export class TagService implements TagServiceContract {
   constructor(private readonly database: DatabaseState) {}
 
@@ -24,13 +31,16 @@ export class TagService implements TagServiceContract {
     return { tags: rows };
   }
 
-  async create(input: { name: string }) {
+  async create(input: { description?: string | null; name: string }) {
     const db = requireDatabase(this.database);
     const normalized = input.name.trim().toLowerCase();
 
     const [inserted] = await db
       .insert(tagsTable)
-      .values({ name: normalized })
+      .values({
+        description: cleanDescription(input.description),
+        name: normalized,
+      })
       .onConflictDoNothing({ target: tagsTable.name })
       .returning();
 
@@ -45,6 +55,25 @@ export class TagService implements TagServiceContract {
       .limit(1);
 
     return existing;
+  }
+
+  /** Only the description is editable; renaming a tag is a different job. */
+  async update(input: { description: string | null; id: number }) {
+    const db = requireDatabase(this.database);
+    const [updated] = await db
+      .update(tagsTable)
+      .set({ description: cleanDescription(input.description) })
+      .where(eq(tagsTable.id, input.id))
+      .returning();
+
+    if (!updated) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `No tag with id ${input.id}`,
+      });
+    }
+
+    return updated;
   }
 
   async delete(input: { id: number }) {

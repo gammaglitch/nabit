@@ -11,7 +11,11 @@ import {
   DeleteTagOutput,
   RemoveTagFromItemInput,
   RemoveTagFromItemOutput,
+  SuggestTagsInput,
+  SuggestTagsOutput,
   TagListOutput,
+  UpdateTagInput,
+  UpdateTagOutput,
 } from "./dto";
 
 export const tagsRouter = router({
@@ -23,6 +27,20 @@ export const tagsRouter = router({
     .output(CreateTagOutput)
     .mutation(async ({ ctx, input }) => {
       return ctx.services.tags.create(input);
+    }),
+  update: authedProcedure
+    .input(UpdateTagInput)
+    .output(UpdateTagOutput)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.services.tags.update(input);
+    }),
+  // A mutation, not a query: every call is a paid Jev request, so it runs
+  // when the user asks for suggestions rather than whenever a cache expires.
+  suggest: authedProcedure
+    .input(SuggestTagsInput)
+    .output(SuggestTagsOutput)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.services.tagging.suggest(input);
     }),
   delete: authedProcedure
     .input(DeleteTagInput)

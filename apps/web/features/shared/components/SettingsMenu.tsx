@@ -192,9 +192,109 @@ export function SettingsMenu() {
           <div style={{ borderTop: "1px solid var(--rule)", padding: 14 }}>
             <ChatSettingsSection enabled={open} />
           </div>
+
+          <div style={{ borderTop: "1px solid var(--rule)", padding: 14 }}>
+            <TagDescriptionsSection enabled={open} />
+          </div>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Descriptions are what Jev judges an article against when suggesting tags.
+ * "rust" alone cannot say whether it means the language or the corrosion, and
+ * only the user knows which their library means.
+ */
+function TagDescriptionsSection({ enabled }: { enabled: boolean }) {
+  const utils = trpc.useUtils();
+  const tagsQuery = trpc.tags.list.useQuery(undefined, { enabled });
+  const updateTag = trpc.tags.update.useMutation({
+    onSuccess: () => {
+      void utils.tags.list.invalidate();
+    },
+  });
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const tags = tagsQuery.data?.tags ?? [];
+
+  const save = (id: number, saved: string | null) => {
+    const draft = drafts[id];
+    if (draft === undefined || draft.trim() === (saved ?? "")) return;
+    updateTag.mutate({ description: draft.trim() || null, id });
+  };
+
+  return (
+    <>
+      <div style={labelStyle}>Tag meanings</div>
+      <div
+        style={{
+          fontFamily: "var(--mono-font)",
+          fontSize: 10,
+          lineHeight: 1.5,
+          color: "var(--ink-4)",
+          marginBottom: 12,
+        }}
+      >
+        What each tag is for. Suggested tags are judged against these, so a line
+        here is worth more than a longer tag name.
+      </div>
+
+      {tags.length === 0 && (
+        <div
+          style={{
+            fontFamily: "var(--mono-font)",
+            fontSize: 11,
+            color: "var(--ink-3)",
+          }}
+        >
+          {tagsQuery.isLoading ? "[LOADING…]" : "No tags yet."}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {tags.map((tag) => (
+          <div key={tag.id}>
+            <label style={fieldLabelStyle} htmlFor={`tag-desc-${tag.id}`}>
+              #{tag.name}
+            </label>
+            <input
+              id={`tag-desc-${tag.id}`}
+              value={drafts[tag.id] ?? tag.description ?? ""}
+              placeholder="what goes under this tag"
+              maxLength={500}
+              onChange={(e) =>
+                setDrafts((current) => ({
+                  ...current,
+                  [tag.id]: e.target.value,
+                }))
+              }
+              onBlur={() => save(tag.id, tag.description)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  save(tag.id, tag.description);
+                }
+              }}
+              style={fieldStyle}
+            />
+          </div>
+        ))}
+      </div>
+
+      {updateTag.error && (
+        <div
+          style={{
+            fontFamily: "var(--mono-font)",
+            fontSize: 10,
+            color: "var(--accent)",
+            marginTop: 8,
+          }}
+        >
+          {updateTag.error.message}
+        </div>
+      )}
+    </>
   );
 }
 

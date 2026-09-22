@@ -2,6 +2,7 @@
 
 import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { trpc } from "@/lib/trpc/react";
 import type { Tag } from "../hooks/useTagOperations";
 
 export type TagPickerAnchor = { top: number; left: number } | "center";
@@ -23,7 +24,8 @@ type TagPickerProps = {
 
 type Row =
   | { kind: "create"; label: string }
-  | { kind: "tag"; label: string; tagId: number; active: boolean };
+  | { kind: "tag"; label: string; tagId: number; active: boolean }
+  | { kind: "suggestion"; label: string; tagId: number; confidence: number };
 
 export function TagPicker({
   item,
@@ -35,6 +37,9 @@ export function TagPicker({
 }: TagPickerProps) {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
+  // Suggestions are asked for, never fetched on open: each run is a paid Jev
+  // request, and most tagging is a click the user already knows they want.
+  const suggest = trpc.tags.suggest.useMutation();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -80,23 +85,48 @@ export function TagPicker({
   const canCreate =
     q.length > 0 && !allTags.some((t) => t.name.toLowerCase() === q);
 
+  // Only while the box is empty: once the user types, they are steering.
+  const suggested = useMemo(
+    () =>
+      q.length > 0
+        ? []
+        : (suggest.data?.suggestions ?? []).filter(
+            (suggestion) => !itemTagIds.has(suggestion.id),
+          ),
+    [q, suggest.data, itemTagIds],
+  );
+
   const rows: Row[] = useMemo(
     () => [
       ...(canCreate ? [{ kind: "create" as const, label: q }] : []),
-      ...suggestions.map(
-        (t): Row => ({
-          kind: "tag",
-          label: t.name,
-          tagId: t.id,
-          active: itemTagIds.has(t.id),
+      ...suggested.map(
+        (suggestion): Row => ({
+          kind: "suggestion",
+          label: suggestion.name,
+          tagId: suggestion.id,
+          confidence: suggestion.confidence,
         }),
       ),
+      // A suggested tag is listed once, as the suggestion: seeing it twice
+      // reads as two different tags with the same name.
+      ...suggestions
+        .filter((t) => !suggested.some((s) => s.id === t.id))
+        .map(
+          (t): Row => ({
+            kind: "tag",
+            label: t.name,
+            tagId: t.id,
+            active: itemTagIds.has(t.id),
+          }),
+        ),
     ],
-    [canCreate, q, suggestions, itemTagIds],
+    [canCreate, q, suggestions, suggested, itemTagIds],
   );
 
   const activate = (row: Row) => {
-    if (row.kind === "create") {
+    if (row.kind === "suggestion") {
+      onAddTag(item.id, row.label);
+    } else if (row.kind === "create") {
       onAddTag(item.id, row.label);
       setQuery("");
       setCursor(0);
@@ -251,60 +281,82 @@ export function TagPicker({
             No tags yet — type to create.
           </div>
         )}
-        {rows.map((row, i) => (
-          <button
-            type="button"
-            key={`${row.kind}:${row.label}`}
-            onMouseEnter={() => setCursor(i)}
-            onClick={() => activate(row)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              width: "100%",
-              padding: "7px 12px",
-              background: cursor === i ? "var(--bg-alt)" : "transparent",
-              fontFamily: "var(--mono-font)",
-              fontSize: 12,
-              color: "var(--ink)",
-              textAlign: "left",
-              borderLeft:
-                cursor === i
-                  ? "2px solid var(--accent)"
-                  : "2px solid transparent",
-              border: 0,
-              borderRadius: 0,
-            }}
-          >
-            <span
+        {rows.map((row, i) => {
+          const suggestion = row.kind === "suggestion";
+          return (
+            <button
+              type="button"
+              key={`${row.kind}:${row.label}`}
+              onMouseEnter={() => setCursor(i)}
+              onClick={() => activate(row)}
               style={{
-                width: 14,
-                fontSize: 10,
-                color:
-                  row.kind === "create"
-                    ? "var(--accent)"
-                    : row.active
-                      ? "var(--accent)"
-                      : "var(--ink-4)",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                width: "100%",
+                padding: "7px 12px",
+                background: cursor === i ? "var(--bg-alt)" : "transparent",
+                fontFamily: "var(--mono-font)",
+                fontSize: 12,
+                color: "var(--ink)",
+                textAlign: "left",
+                borderLeft:
+                  cursor === i
+                    ? "2px solid var(--accent)"
+                    : "2px solid transparent",
+                border: 0,
+                borderRadius: 0,
               }}
             >
-              {row.kind === "create" ? "+" : row.active ? "✓" : "·"}
-            </span>
-            <span style={{ flex: 1 }}>
-              {row.kind === "create" ? (
-                <>
-                  Create{" "}
-                  <strong style={{ color: "var(--accent)" }}>
-                    #{row.label}
-                  </strong>
-                </>
-              ) : (
-                <>#{row.label}</>
+              <span
+                style={{
+                  width: 14,
+                  fontSize: 10,
+                  color:
+                    row.kind === "create" || suggestion
+                      ? "var(--accent)"
+                      : row.active
+                        ? "var(--accent)"
+                        : "var(--ink-4)",
+                }}
+              >
+                {row.kind === "create"
+                  ? "+"
+                  : suggestion
+                    ? "◇"
+                    : row.active
+                      ? "✓"
+                      : "·"}
+              </span>
+              <span style={{ flex: 1 }}>
+                {row.kind === "create" ? (
+                  <>
+                    Create{" "}
+                    <strong style={{ color: "var(--accent)" }}>
+                      #{row.label}
+                    </strong>
+                  </>
+                ) : (
+                  <>#{row.label}</>
+                )}
+              </span>
+              {suggestion && (
+                <span style={{ fontSize: 10, color: "var(--ink-3)" }}>
+                  {Math.round(row.confidence * 100)}%
+                </span>
               )}
-            </span>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
+
+      <SuggestRow
+        error={suggest.error?.message ?? null}
+        hasSuggestions={suggested.length > 0}
+        pending={suggest.isPending}
+        ran={suggest.isSuccess}
+        onSuggest={() => suggest.mutate({ itemId: item.id })}
+      />
 
       <div
         style={{
@@ -318,6 +370,78 @@ export function TagPicker({
       >
         ↵ toggle · ↑↓ move · esc close
       </div>
+    </div>
+  );
+}
+
+/**
+ * Asks Jev which existing tags fit this item. It only ever proposes: the tags
+ * it names are added by the same click as any other row.
+ */
+function SuggestRow({
+  error,
+  hasSuggestions,
+  onSuggest,
+  pending,
+  ran,
+}: {
+  error: string | null;
+  hasSuggestions: boolean;
+  onSuggest: () => void;
+  pending: boolean;
+  ran: boolean;
+}) {
+  return (
+    <div
+      style={{
+        borderTop: "1px solid var(--rule-soft)",
+        padding: "8px 12px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 4,
+      }}
+    >
+      <button
+        type="button"
+        disabled={pending}
+        onClick={onSuggest}
+        style={{
+          fontFamily: "var(--mono-font)",
+          fontSize: 10,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "var(--ink-2)",
+          background: "transparent",
+          border: "1px solid var(--rule)",
+          padding: "5px 8px",
+          cursor: pending ? "default" : "pointer",
+          textAlign: "left",
+        }}
+      >
+        {pending ? "Reading the article…" : "◇ Suggest tags"}
+      </button>
+      {error && (
+        <span
+          style={{
+            fontFamily: "var(--mono-font)",
+            fontSize: 9,
+            color: "var(--accent)",
+          }}
+        >
+          {error}
+        </span>
+      )}
+      {ran && !pending && !hasSuggestions && !error && (
+        <span
+          style={{
+            fontFamily: "var(--mono-font)",
+            fontSize: 9,
+            color: "var(--ink-3)",
+          }}
+        >
+          No existing tag fits this one.
+        </span>
+      )}
     </div>
   );
 }

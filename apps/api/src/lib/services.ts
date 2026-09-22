@@ -10,6 +10,7 @@ import { HealthService } from "../modules/health/service";
 import { HelloService } from "../modules/hello/service";
 import { IngestService } from "../modules/ingest/service";
 import { SettingsService } from "../modules/settings/service";
+import { TaggingService } from "../modules/tagging/service";
 import { TagService } from "../modules/tags/service";
 import { UserService } from "../modules/users/service";
 import type { AppEnv } from "./config/env";
@@ -26,6 +27,7 @@ export interface ServiceContainer extends TrpcServices {
   hello: HelloService;
   ingest: IngestService;
   settings: SettingsService;
+  tagging: TaggingService;
   tags: TagService;
   users: UserService;
 }
@@ -74,6 +76,7 @@ export function makeServices(options: MakeServicesOptions): ServiceContainer {
     hello,
     ingest,
     settings,
+    tagging: new TaggingService(options.database, exportService, options.env),
     tags: new TagService(options.database),
     users: new UserService(options.database),
   };

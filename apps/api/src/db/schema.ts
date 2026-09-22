@@ -395,6 +395,9 @@ export const commentsTable = schema.table(
 export const tagsTable = schema.table("tags", (t) => ({
   id: t.bigserial({ mode: "number" }).primaryKey(),
   name: t.text("name").notNull().unique(),
+  // Optional, and written by the user. Read when Jev suggests tags: the name
+  // alone is often too terse to judge an article against.
+  description: t.text("description"),
 }));
 
 export const assetsTable = schema.table(

@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 export const TagOutput = z.object({
+  /**
+   * What the tag is for, in the user's words. Jev judges an article against
+   * this when suggesting tags, so a name like "rust" can say whether it means
+   * the language or the corrosion.
+   */
+  description: z.string().nullable(),
   id: z.number(),
   name: z.string(),
 });
@@ -10,7 +16,35 @@ export const TagListOutput = z.object({
 });
 
 export const CreateTagInput = z.object({
+  description: z.string().max(500).nullable().optional(),
   name: z.string().min(1).max(100),
+});
+
+export const UpdateTagInput = z.object({
+  description: z.string().max(500).nullable(),
+  id: z.number(),
+});
+
+export const UpdateTagOutput = TagOutput;
+
+export const SuggestTagsInput = z.object({
+  itemId: z.number(),
+});
+
+export const SuggestTagsOutput = z.object({
+  model: z.string(),
+  /** True when the library has more tags than one round could weigh. */
+  truncated: z.boolean(),
+  /** Tags the item does not already carry, most confident first. */
+  suggestions: z.array(
+    z.object({
+      /** Jev's probability, 0-1, that the tag belongs on this item. */
+      confidence: z.number().min(0).max(1),
+      description: z.string().nullable(),
+      id: z.number(),
+      name: z.string(),
+    }),
+  ),
 });
 
 export const CreateTagOutput = TagOutput;
@@ -51,6 +85,10 @@ export const RemoveTagFromItemOutput = z.object({
 });
 
 export type TagOutputDTO = z.infer<typeof TagOutput>;
+export type UpdateTagInputDTO = z.infer<typeof UpdateTagInput>;
+export type UpdateTagOutputDTO = z.infer<typeof UpdateTagOutput>;
+export type SuggestTagsInputDTO = z.infer<typeof SuggestTagsInput>;
+export type SuggestTagsOutputDTO = z.infer<typeof SuggestTagsOutput>;
 export type TagListOutputDTO = z.infer<typeof TagListOutput>;
 export type CreateTagInputDTO = z.infer<typeof CreateTagInput>;
 export type CreateTagOutputDTO = z.infer<typeof CreateTagOutput>;
