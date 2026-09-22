@@ -16,7 +16,6 @@ function requireDatabase(database: DatabaseState): Database {
 }
 
 export const SETTING_KEYS = {
-  findModel: "find.model",
   historyTurns: "chat.historyTurns",
   maxContextChars: "chat.maxContextChars",
   model: "chat.model",
@@ -84,8 +83,6 @@ function isValidTimezone(value: string): boolean {
 export interface ResolvedChatSettings {
   /** Whether OPENROUTER_API_KEY is set. The key itself is never exposed. */
   apiKeyConfigured: boolean;
-  /** Model behind the reader's semantic find. Falls back like `model`. */
-  findModel: string;
   /** How many of the most recent messages accompany each question. */
   historyTurns: number;
   /** Ceiling on the rendered article + comments injected as context. */
@@ -119,8 +116,6 @@ export class SettingsService implements SettingsServiceContract {
 
     return {
       apiKeyConfigured: this.env.openrouter.enabled,
-      findModel:
-        stored[SETTING_KEYS.findModel]?.trim() || this.env.openrouter.model,
       historyTurns: clampInt(
         Number(stored[SETTING_KEYS.historyTurns] ?? Number.NaN),
         CHAT_LIMITS.historyTurns,
@@ -234,20 +229,16 @@ export class SettingsService implements SettingsServiceContract {
   }
 
   async update(input: {
-    findModel?: string;
     historyTurns?: number;
     maxContextChars?: number;
     model?: string;
   }) {
     const writes: Array<{ key: string; value: string }> = [];
 
-    for (const [key, value] of [
-      [SETTING_KEYS.model, input.model],
-      [SETTING_KEYS.findModel, input.findModel],
-    ] as const) {
-      const trimmed = value?.trim();
-      if (trimmed) {
-        writes.push({ key, value: trimmed });
+    if (input.model !== undefined) {
+      const model = input.model.trim();
+      if (model.length > 0) {
+        writes.push({ key: SETTING_KEYS.model, value: model });
       }
     }
     if (input.maxContextChars !== undefined) {

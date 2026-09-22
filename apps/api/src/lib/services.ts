@@ -66,7 +66,7 @@ export function makeServices(options: MakeServicesOptions): ServiceContainer {
       settings,
     ),
     export: exportService,
-    find: new FindService(settings, options.env),
+    find: new FindService(options.env),
     health: new HealthService({
       database: options.database,
       env: options.env,

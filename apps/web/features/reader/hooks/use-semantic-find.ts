@@ -19,9 +19,10 @@ const HIGHLIGHT_ALL = "nabit-find";
 const HIGHLIGHT_ACTIVE = "nabit-find-active";
 
 export interface FindResult {
+  /** Jev's probability, 0–1, that this passage matches the query. */
+  confidence: number;
   element: Element;
   range: Range;
-  reason: string;
 }
 
 type Status = "idle" | "searching" | "done" | "error";
@@ -57,7 +58,7 @@ function clearPaint() {
 
 /**
  * State for the reader's cmd+f: sends the rendered article's passages and the
- * query to the model, then maps its picks back onto the page.
+ * query to Jev, then maps its picks back onto the page.
  */
 export function useSemanticFind(containerRef: RefObject<Element | null>) {
   // mutateAsync is stable; the mutation object itself is new every render.
@@ -144,7 +145,11 @@ export function useSemanticFind(containerRef: RefObject<Element | null>) {
         const range =
           (match.quote && rangeForQuote(passage.element, match.quote)) ||
           rangeForElement(passage.element);
-        mapped.push({ element: passage.element, range, reason: match.reason });
+        mapped.push({
+          confidence: match.confidence,
+          element: passage.element,
+          range,
+        });
       }
       setResults(mapped);
       setTruncated(response.truncated);

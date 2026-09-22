@@ -130,14 +130,14 @@ export function SemanticFindBar({ find }: { find: SemanticFind }) {
       {find.status === "error" && find.error && (
         <div style={{ ...metaStyle, color: "var(--accent)" }}>{find.error}</div>
       )}
-      {active?.reason && !stale && (
+      {active && !stale && (
         <div style={{ ...metaStyle, color: "var(--ink-2)" }}>
-          {active.reason}
+          {Math.round(active.confidence * 100)}% match
         </div>
       )}
       {find.truncated && !stale && (
         <div style={metaStyle}>
-          Long article: only the part that fits the context limit was searched.
+          Long article: only its first part was searched.
         </div>
       )}
       <div style={{ ...metaStyle, color: "var(--ink-4)" }}>

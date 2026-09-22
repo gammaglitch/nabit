@@ -26,19 +26,22 @@ export const FindMatch = z.object({
   /** Index into the `passages` the client sent. */
   passage: z.number().int().min(0),
   /**
-   * The exact span inside the passage that answers the query, when the model
-   * picked one and it really is in the passage. Null means "the whole block".
+   * Jev's probability, 0–1, that the passage matches. Calibrated, so it can
+   * be shown to the user as-is.
+   */
+  confidence: z.number().min(0).max(1),
+  /**
+   * The sentence inside the passage that carries the match, copied from the
+   * passage itself. Null means "highlight the whole block".
    */
   quote: z.string().nullable(),
-  /** One short line on why this passage matches. */
-  reason: z.string(),
 });
 
 export const FindSearchOutput = z.object({
   /** Best match first. */
   matches: z.array(FindMatch),
   model: z.string(),
-  /** True when the passages were cut to fit the context limit. */
+  /** True when the article was too long and only its start was searched. */
   truncated: z.boolean(),
 });
 

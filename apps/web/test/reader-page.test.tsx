@@ -843,18 +843,18 @@ describe("ReaderPage", () => {
           matches: [
             {
               passage: input.passages.indexOf("A heading"),
+              confidence: 0.97,
               quote: null,
-              reason: "section title",
             },
             {
               passage: input.passages.findIndex((p) =>
                 p.startsWith("Here is a paragraph"),
               ),
+              confidence: 0.64,
               quote: "bold text",
-              reason: "mentions emphasis",
             },
           ],
-          model: "test/model",
+          model: "typesafe/jev-1.13-20260917",
           truncated: false,
         }),
       );
@@ -866,7 +866,7 @@ describe("ReaderPage", () => {
       fireEvent.keyDown(input, { key: "Enter" });
 
       expect(await screen.findByText("1/2")).toBeInTheDocument();
-      expect(screen.getByText("section title")).toBeInTheDocument();
+      expect(screen.getByText("97% match")).toBeInTheDocument();
       const [request] = findSearchMock.mock.calls[0] as [
         { passages: string[]; query: string },
       ];
@@ -880,7 +880,7 @@ describe("ReaderPage", () => {
       // Enter on an unchanged query moves on rather than searching again.
       fireEvent.keyDown(input, { key: "Enter" });
       expect(screen.getByText("2/2")).toBeInTheDocument();
-      expect(screen.getByText("mentions emphasis")).toBeInTheDocument();
+      expect(screen.getByText("64% match")).toBeInTheDocument();
       expect(findSearchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -900,7 +900,7 @@ describe("ReaderPage", () => {
 
     test("shows why a search failed", async () => {
       findSearchMock.mockRejectedValue(
-        new Error("Find with typesafe/jev-1.13 failed: model not found"),
+        new Error("Find failed: Insufficient credits"),
       );
       render(<ReaderPage id={1} />);
       fireEvent.keyDown(window, { ctrlKey: true, key: "f" });
@@ -910,9 +910,7 @@ describe("ReaderPage", () => {
       fireEvent.keyDown(input, { key: "Enter" });
 
       expect(
-        await screen.findByText(
-          "Find with typesafe/jev-1.13 failed: model not found",
-        ),
+        await screen.findByText("Find failed: Insufficient credits"),
       ).toBeInTheDocument();
     });
   });

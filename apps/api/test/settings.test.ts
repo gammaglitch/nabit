@@ -70,9 +70,6 @@ describe("SettingsService.getChatSettings", () => {
     const settings = await service.getChatSettings();
 
     expect(settings.model).toBe("env/model");
-    // No find model of its own until one is saved: an instance that never
-    // opened the settings menu searches with the chat model.
-    expect(settings.findModel).toBe("env/model");
     expect(settings.historyTurns).toBe(CHAT_LIMITS.historyTurns.fallback);
     expect(settings.maxContextChars).toBe(CHAT_LIMITS.maxContextChars.fallback);
   });
