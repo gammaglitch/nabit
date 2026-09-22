@@ -208,6 +208,7 @@ function ChatSettingsSection({ enabled }: { enabled: boolean }) {
   });
 
   const [model, setModel] = useState("");
+  const [findModel, setFindModel] = useState("");
   const [maxContextChars, setMaxContextChars] = useState("");
   const [historyTurns, setHistoryTurns] = useState("");
 
@@ -217,6 +218,7 @@ function ChatSettingsSection({ enabled }: { enabled: boolean }) {
   useEffect(() => {
     if (!loaded) return;
     setModel(loaded.model);
+    setFindModel(loaded.findModel);
     setMaxContextChars(String(loaded.maxContextChars));
     setHistoryTurns(String(loaded.historyTurns));
   }, [loaded]);
@@ -224,6 +226,7 @@ function ChatSettingsSection({ enabled }: { enabled: boolean }) {
   const dirty =
     loaded !== undefined &&
     (model !== loaded.model ||
+      findModel !== loaded.findModel ||
       maxContextChars !== String(loaded.maxContextChars) ||
       historyTurns !== String(loaded.historyTurns));
 
@@ -260,6 +263,7 @@ function ChatSettingsSection({ enabled }: { enabled: boolean }) {
           onSubmit={(e) => {
             e.preventDefault();
             updateSettings.mutate({
+              findModel: findModel.trim(),
               historyTurns: Number(historyTurns),
               maxContextChars: Number(maxContextChars),
               model: model.trim(),
@@ -315,6 +319,17 @@ function ChatSettingsSection({ enabled }: { enabled: boolean }) {
               <option key={slug} value={slug} />
             ))}
           </datalist>
+
+          <label style={fieldLabelStyle} htmlFor="settings-find-model">
+            Find model (⌘F in the reader)
+          </label>
+          <input
+            id="settings-find-model"
+            list="settings-model-options"
+            value={findModel}
+            onChange={(e) => setFindModel(e.target.value)}
+            style={{ ...fieldStyle, marginBottom: 12 }}
+          />
 
           <label style={fieldLabelStyle} htmlFor="settings-context">
             Context limit (characters)

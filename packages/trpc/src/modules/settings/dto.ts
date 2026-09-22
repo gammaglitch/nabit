@@ -6,12 +6,15 @@ export const ChatSettingsOutput = z.object({
    * it stays an env var so a live billing credential is not stored in the DB.
    */
   apiKeyConfigured: z.boolean(),
+  /** Model behind the reader's semantic find (cmd+f). */
+  findModel: z.string(),
   historyTurns: z.number(),
   maxContextChars: z.number(),
   model: z.string(),
 });
 
 export const UpdateChatSettingsInput = z.object({
+  findModel: z.string().min(1).max(200).optional(),
   historyTurns: z.number().int().min(1).max(50).optional(),
   maxContextChars: z.number().int().min(1_000).max(500_000).optional(),
   model: z.string().min(1).max(200).optional(),

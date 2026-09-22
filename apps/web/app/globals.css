@@ -171,3 +171,14 @@ a {
     opacity: 1;
   }
 }
+
+/* Semantic find (cmd+f in the reader). Painted with the CSS Custom Highlight
+   API, so matches never add elements to the article's DOM. */
+::highlight(nabit-find) {
+  background-color: var(--hl);
+  color: #111;
+}
+::highlight(nabit-find-active) {
+  background-color: var(--accent);
+  color: var(--bg);
+}
