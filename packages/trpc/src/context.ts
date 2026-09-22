@@ -57,6 +57,15 @@ import type {
   UpdateChatSettingsOutputDTO,
 } from "./modules/settings/dto";
 import type {
+  LatestTagRunOutputDTO,
+  StartTagRunInputDTO,
+  SuggestTagsInputDTO,
+  SuggestTagsOutputDTO,
+  TagRunEstimateOutputDTO,
+  TagRunIdInputDTO,
+  TagRunOutputDTO,
+} from "./modules/tagging/dto";
+import type {
   AddTagToItemInputDTO,
   AddTagToItemOutputDTO,
   AddTagToItemsInputDTO,
@@ -67,8 +76,6 @@ import type {
   DeleteTagOutputDTO,
   RemoveTagFromItemInputDTO,
   RemoveTagFromItemOutputDTO,
-  SuggestTagsInputDTO,
-  SuggestTagsOutputDTO,
   TagListOutputDTO,
   UpdateTagInputDTO,
   UpdateTagOutputDTO,
@@ -196,6 +203,21 @@ export interface TrpcServices {
     suggest(
       input: SuggestTagsInputDTO,
     ): SuggestTagsOutputDTO | Promise<SuggestTagsOutputDTO>;
+    estimateRun(
+      input: StartTagRunInputDTO,
+    ): TagRunEstimateOutputDTO | Promise<TagRunEstimateOutputDTO>;
+    startRun(
+      input: StartTagRunInputDTO,
+      actor: RequestActor,
+    ): TagRunOutputDTO | Promise<TagRunOutputDTO>;
+    getRun(input: TagRunIdInputDTO): TagRunOutputDTO | Promise<TagRunOutputDTO>;
+    latestRun(): LatestTagRunOutputDTO | Promise<LatestTagRunOutputDTO>;
+    applyRun(
+      input: TagRunIdInputDTO,
+    ): TagRunOutputDTO | Promise<TagRunOutputDTO>;
+    cancelRun(
+      input: TagRunIdInputDTO,
+    ): TagRunOutputDTO | Promise<TagRunOutputDTO>;
   };
   tags: {
     list(): TagListOutputDTO | Promise<TagListOutputDTO>;

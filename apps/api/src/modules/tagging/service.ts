@@ -14,6 +14,7 @@ import {
   UNTRUSTED_NOTE,
 } from "../../lib/jev";
 import type { ExportService } from "../export/service";
+import { TagRunService } from "./run-service";
 
 type TaggingServiceContract = TrpcServices["tagging"];
 type SuggestInput = Parameters<TaggingServiceContract["suggest"]>[0];
@@ -36,12 +37,30 @@ export const SUGGESTION_FLOOR = 0.5;
 export const MAX_SUGGESTIONS = 10;
 
 export class TaggingService implements TaggingServiceContract {
+  /**
+   * Bulk passes live in their own service: they are a worker job with a
+   * lifecycle, where a suggestion is a single request the user waits for.
+   * Delegated rather than merged so the tRPC contract stays one service.
+   */
+  readonly runs: TagRunService;
+
   constructor(
     private readonly database: DatabaseState,
     private readonly exportService: ExportService,
     private readonly env: AppEnv,
     private readonly fetcher?: JevFetcher,
-  ) {}
+  ) {
+    this.runs = new TagRunService(database, env, fetcher);
+  }
+
+  estimateRun: TagRunService["estimateRun"] = (input) =>
+    this.runs.estimateRun(input);
+  startRun: TagRunService["startRun"] = (input, actor) =>
+    this.runs.startRun(input, actor);
+  getRun: TagRunService["getRun"] = (input) => this.runs.getRun(input);
+  latestRun: TagRunService["latestRun"] = () => this.runs.latestRun();
+  applyRun: TagRunService["applyRun"] = (input) => this.runs.applyRun(input);
+  cancelRun: TagRunService["cancelRun"] = (input) => this.runs.cancelRun(input);
 
   /**
    * Weighs every tag in the library against one item and returns the ones
@@ -122,6 +141,7 @@ export async function scoreTags(
   jev: JevClient,
   article: ReturnType<typeof buildArticleState>,
   tags: TagRow[],
+  options: { limit?: number } = {},
 ): Promise<Omit<SuggestOutput, "truncated">> {
   const state = { article };
   let model = JEV_MODEL;
@@ -151,7 +171,7 @@ export async function scoreTags(
       .flat()
       .filter((suggestion) => suggestion.confidence >= SUGGESTION_FLOOR)
       .sort((a, b) => b.confidence - a.confidence)
-      .slice(0, MAX_SUGGESTIONS),
+      .slice(0, options.limit ?? MAX_SUGGESTIONS),
   };
 }
 

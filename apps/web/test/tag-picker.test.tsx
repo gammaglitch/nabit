@@ -31,7 +31,7 @@ const { suggestMock, suggestState } = vi.hoisted(() => ({
 
 vi.mock("@/lib/trpc/react", () => ({
   trpc: {
-    tags: {
+    tagging: {
       suggest: {
         // Mirrors react-query's shape closely enough for the picker: the
         // component reads data/isPending/isSuccess/error off the mutation.
