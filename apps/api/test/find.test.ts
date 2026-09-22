@@ -22,13 +22,6 @@ function makeEnv(apiKey: string | null = "test-key"): AppEnv {
     host: "127.0.0.1",
     openrouter: { apiKey, enabled: apiKey !== null, model: "env/model" },
     port: 3001,
-    supabase: {
-      authEnabled: false,
-      jwtAudience: ["authenticated"],
-      jwtIssuer: null,
-      jwksUrl: null,
-      url: null,
-    },
     websocketsEnabled: false,
   };
 }

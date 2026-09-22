@@ -23,13 +23,6 @@ function makeEnv(overrides: Partial<AppEnv["openrouter"]> = {}): AppEnv {
       ...overrides,
     },
     port: 3001,
-    supabase: {
-      authEnabled: false,
-      jwtAudience: ["authenticated"],
-      jwtIssuer: null,
-      jwksUrl: null,
-      url: null,
-    },
     websocketsEnabled: false,
   };
 }

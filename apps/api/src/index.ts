@@ -11,7 +11,7 @@ try {
     {
       host: app.env.host,
       port: app.env.port,
-      supabaseAuthEnabled: app.env.supabase.authEnabled,
+      signInEnabled: app.auth !== null,
       websocketsEnabled: app.env.websocketsEnabled,
     },
     "api server listening",

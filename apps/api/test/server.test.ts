@@ -3,7 +3,6 @@ import { buildApp } from "../src/server";
 
 const previousEnv = {
   databaseUrl: process.env.DATABASE_URL,
-  supabaseUrl: process.env.SUPABASE_URL,
   tursoAuthToken: process.env.TURSO_AUTH_TOKEN,
   tursoDatabaseUrl: process.env.TURSO_DATABASE_URL,
   websocketsEnabled: process.env.WEBSOCKETS_ENABLED,
@@ -14,7 +13,6 @@ describe("API server", () => {
 
   beforeEach(async () => {
     process.env.DATABASE_URL = "";
-    process.env.SUPABASE_URL = "";
     process.env.TURSO_AUTH_TOKEN = "";
     process.env.TURSO_DATABASE_URL = "";
     process.env.WEBSOCKETS_ENABLED = "";
@@ -26,7 +24,6 @@ describe("API server", () => {
     await app.close();
 
     process.env.DATABASE_URL = previousEnv.databaseUrl;
-    process.env.SUPABASE_URL = previousEnv.supabaseUrl;
     process.env.TURSO_AUTH_TOKEN = previousEnv.tursoAuthToken;
     process.env.TURSO_DATABASE_URL = previousEnv.tursoDatabaseUrl;
     process.env.WEBSOCKETS_ENABLED = previousEnv.websocketsEnabled;

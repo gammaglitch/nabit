@@ -12,7 +12,7 @@ import {
 import { AUTH_BASE_PATH } from "../lib/better-auth";
 
 // Used when AUTH_REQUIRED=false — every request gets this user so downstream
-// `authedProcedure` checks pass without a JWT. See apps/api/src/lib/config/env.ts.
+// `authedProcedure` checks pass without a session. See apps/api/src/lib/config/env.ts.
 const LOCAL_USER: AuthUser = {
   email: null,
   id: "auth-disabled",
@@ -22,7 +22,7 @@ const LOCAL_USER: AuthUser = {
 };
 
 export default fp(async (app) => {
-  const verifyAuthHeader = createAuthHeaderVerifier(app.env);
+  const verifyAuthHeader = createAuthHeaderVerifier(app.env, () => app.auth);
   const authRequired = app.env.authRequired;
 
   app.decorateRequest("user", null);
@@ -44,9 +44,9 @@ export default fp(async (app) => {
       user = await verifyAuthHeader(req.headers.authorization);
     } catch (error) {
       if (error instanceof AuthConfigurationError) {
-        req.log.error(error, "supabase auth is not configured");
+        req.log.error(error, "sign-in is not configured");
         return reply.code(503).send({
-          message: "Supabase auth verification is not configured on the API.",
+          message: "Sign-in is not configured on the API.",
         });
       }
 
@@ -66,19 +66,20 @@ export default fp(async (app) => {
 
     // Enforced here rather than per route: the tRPC middleware used to be the
     // only place ALLOWED_EMAILS was checked, which left every REST route
-    // (/ingest, /chat, /export) open to any account the Supabase project would
-    // issue a token to. Checked before the user is resolved, too, so an
-    // account that is turned away never gets a `users` row.
+    // (/ingest, /chat, /export) open to any signed-in account. Sign-up is
+    // gated on the same list, but the list can shrink after an account
+    // exists. Checked before the user is resolved, too, so an account that
+    // is turned away never gets a `users` row.
     if (!isUserAllowed(user, app.env.allowedEmails)) {
       return reply.code(403).send({ message: EMAIL_NOT_ALLOWED_MESSAGE });
     }
 
-    if (user.tokenKind === "supabase") {
+    if (user.tokenKind === "session") {
       user = {
         ...user,
         userId: await app.services.users.resolve({
           email: user.email,
-          provider: "supabase",
+          provider: "better-auth",
           subject: user.id,
         }),
       };

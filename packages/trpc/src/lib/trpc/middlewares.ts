@@ -8,7 +8,7 @@ export const EMAIL_NOT_ALLOWED_MESSAGE =
 /**
  * The ALLOWED_EMAILS gate. An empty or missing list lets everyone in.
  *
- * Only provider logins are checked. The API token is the operator's own
+ * Only signed-in sessions are checked. The API token is the operator's own
  * credential and the auth-disabled user is the operator by definition; neither
  * has an email to match, and rejecting them would lock the operator out the
  * moment they invite someone else.
@@ -24,7 +24,7 @@ export function isUserAllowed(
     return true;
   }
 
-  if (user.tokenKind !== "supabase") {
+  if (user.tokenKind !== "session") {
     return true;
   }
 

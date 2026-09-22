@@ -21,13 +21,6 @@ export interface AppEnv {
     model: string;
   };
   port: number;
-  supabase: {
-    authEnabled: boolean;
-    jwtAudience: string[];
-    jwtIssuer: string | null;
-    jwksUrl: string | null;
-    url: string | null;
-  };
   websocketsEnabled: boolean;
 }
 
@@ -42,12 +35,6 @@ export function getAppEnv(): AppEnv {
   );
 
   const openrouterApiKey = process.env.OPENROUTER_API_KEY?.trim() || null;
-
-  const supabaseUrl = parseOptionalUrl(process.env.SUPABASE_URL);
-  const jwtIssuer =
-    process.env.SUPABASE_JWT_ISSUER ?? deriveSupabaseAuthUrl(supabaseUrl);
-  const jwksUrl =
-    process.env.SUPABASE_JWKS_URL ?? deriveSupabaseJwksUrl(supabaseUrl);
 
   return {
     allowedEmails: parseList(process.env.ALLOWED_EMAILS),
@@ -81,15 +68,6 @@ export function getAppEnv(): AppEnv {
       model: process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL,
     },
     port: Number(process.env.PORT ?? 3001),
-    supabase: {
-      authEnabled: Boolean(supabaseUrl),
-      jwtAudience: parseList(process.env.SUPABASE_JWT_AUDIENCE) ?? [
-        "authenticated",
-      ],
-      jwtIssuer,
-      jwksUrl,
-      url: supabaseUrl,
-    },
     websocketsEnabled: parseBoolean(process.env.WEBSOCKETS_ENABLED),
   };
 }
@@ -123,20 +101,4 @@ function parseOptionalAbsoluteUrl(value: string | undefined) {
   }
 
   return new URL(value).toString();
-}
-
-function deriveSupabaseAuthUrl(supabaseUrl: string | null) {
-  if (!supabaseUrl) {
-    return null;
-  }
-
-  return `${supabaseUrl}/auth/v1`;
-}
-
-function deriveSupabaseJwksUrl(supabaseUrl: string | null) {
-  if (!supabaseUrl) {
-    return null;
-  }
-
-  return `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
 }

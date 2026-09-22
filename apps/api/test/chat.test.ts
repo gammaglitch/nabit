@@ -6,7 +6,6 @@ const previousEnv = {
   authRequired: process.env.AUTH_REQUIRED,
   databaseUrl: process.env.DATABASE_URL,
   openrouterApiKey: process.env.OPENROUTER_API_KEY,
-  supabaseUrl: process.env.SUPABASE_URL,
 };
 
 const WEB_ORIGIN = "http://localhost:3002";
@@ -64,9 +63,8 @@ describe("POST /chat", () => {
 
   beforeEach(async () => {
     process.env.DATABASE_URL = "";
-    process.env.SUPABASE_URL = "";
     // Single-user mode: every request arrives with a synthetic admin user, so
-    // these tests exercise the route rather than JWT verification.
+    // these tests exercise the route rather than session verification.
     process.env.AUTH_REQUIRED = "false";
     process.env.OPENROUTER_API_KEY = "test-key";
 
@@ -79,7 +77,6 @@ describe("POST /chat", () => {
     process.env.AUTH_REQUIRED = previousEnv.authRequired;
     process.env.DATABASE_URL = previousEnv.databaseUrl;
     process.env.OPENROUTER_API_KEY = previousEnv.openrouterApiKey;
-    process.env.SUPABASE_URL = previousEnv.supabaseUrl;
   });
 
   test("streams the answer as SSE and keeps the CORS header", async () => {
@@ -202,7 +199,6 @@ describe("POST /chat", () => {
   test("requires authentication when auth is enabled", async () => {
     await app.close();
     process.env.AUTH_REQUIRED = "true";
-    process.env.SUPABASE_URL = "https://project.supabase.co";
     app = await buildApp();
 
     const response = await app.inject({

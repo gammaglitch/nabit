@@ -25,13 +25,14 @@ const tsvector = customType<{ data: string }>({
 
 // nabit's own notion of a person. Everything that records who did something
 // points here by `id`, never at an auth provider's subject or at an email, so
-// swapping Supabase for another provider only means relinking
-// `user_identities` — none of the tables that reference a user change.
+// swapping auth providers only means relinking `user_identities` — none of
+// the tables that reference a user change. (It already happened once, from
+// Supabase to Better Auth.)
 //
 // `email` is a display copy of whatever the provider last reported. It is
 // deliberately not unique: providers disagree on whether it is verified, and a
-// deleted-and-recreated Supabase account comes back with a new subject but the
-// same address, which must not make that person unable to log in.
+// deleted-and-recreated account comes back with a new subject but the same
+// address, which must not make that person unable to log in.
 export const usersTable = schema.table(
   "users",
   (t) => ({
@@ -52,7 +53,7 @@ export const usersTable = schema.table(
 
 // Maps an auth provider's account onto a nabit user. Created on first login
 // (see modules/users/service.ts). The (provider, subject) pair is the only
-// stable handle a provider gives us — for Supabase that is the JWT `sub`.
+// stable handle a provider gives us — for Better Auth that is its user id.
 export const userIdentitiesTable = schema.table(
   "user_identities",
   (t) => ({
