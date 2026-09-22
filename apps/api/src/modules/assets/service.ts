@@ -224,8 +224,7 @@ export function pathForSha256(sha256: string) {
   return join(sha256.slice(0, 2), sha256.slice(2, 4), sha256);
 }
 
-const MARKDOWN_IMAGE_REGEX =
-  /!\[([^\]]*)\]\(([^()\s]+)(?:\s+"([^"]*)")?\)/g;
+const MARKDOWN_IMAGE_REGEX = /!\[([^\]]*)\]\(([^()\s]+)(?:\s+"([^"]*)")?\)/g;
 
 function resolveUrl(url: string, base?: string) {
   try {

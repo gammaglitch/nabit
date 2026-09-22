@@ -41,7 +41,9 @@ describe("AssetService.pathForSha256", () => {
 describe("AssetService.rewriteMarkdownImages", () => {
   test("returns markdown untouched when there are no images", async () => {
     const { service, downloaded } = makeService();
-    const result = await service.rewriteMarkdownImages("# hi\n\nno images here");
+    const result = await service.rewriteMarkdownImages(
+      "# hi\n\nno images here",
+    );
     expect(result.markdown).toBe("# hi\n\nno images here");
     expect(result.assetIds).toEqual([]);
     expect(downloaded).toHaveLength(0);
@@ -86,7 +88,8 @@ describe("AssetService.rewriteMarkdownImages", () => {
     expect(resolved.markdown).toBe("![a](/assets/hash1)");
 
     const noBase = makeService();
-    const left = await noBase.service.rewriteMarkdownImages("![a](images/x.png)");
+    const left =
+      await noBase.service.rewriteMarkdownImages("![a](images/x.png)");
     expect(noBase.downloaded).toHaveLength(0);
     expect(left.markdown).toBe("![a](images/x.png)");
   });

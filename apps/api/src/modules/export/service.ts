@@ -196,7 +196,9 @@ export class ExportService {
     return this.toArticleData(item, comments, tags.get(input.id) ?? []);
   }
 
-  async getArticlesBatch(input: { ids: number[] }): Promise<ExportArticleData[]> {
+  async getArticlesBatch(input: {
+    ids: number[];
+  }): Promise<ExportArticleData[]> {
     const db = requireDatabase(this.database);
     if (input.ids.length === 0) {
       return [];

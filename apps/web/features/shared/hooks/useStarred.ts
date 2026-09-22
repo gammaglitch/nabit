@@ -28,10 +28,7 @@ export function useStarred() {
     setStarred(readStored());
   }, []);
 
-  const isStarred = useCallback(
-    (id: number) => starred.has(id),
-    [starred],
-  );
+  const isStarred = useCallback((id: number) => starred.has(id), [starred]);
 
   const toggleStarred = useCallback((id: number) => {
     setStarred((prev) => {

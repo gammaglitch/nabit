@@ -44,9 +44,10 @@ export default function DebugSyncPage() {
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [doc, setDoc] = useState("");
-  const [docMeta, setDocMeta] = useState<{ url: string; contentType: string } | null>(
-    null,
-  );
+  const [docMeta, setDocMeta] = useState<{
+    url: string;
+    contentType: string;
+  } | null>(null);
 
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -74,7 +75,9 @@ export default function DebugSyncPage() {
         const url = `${getApiOrigin()}/export/articles?${params.toString()}`;
         const res = await fetch(url, { headers: await authHeaders() });
         if (!res.ok) {
-          throw new Error(`${res.status} ${res.statusText} — ${await res.text()}`);
+          throw new Error(
+            `${res.status} ${res.statusText} — ${await res.text()}`,
+          );
         }
         const data: ListResult = await res.json();
 
@@ -118,7 +121,9 @@ export default function DebugSyncPage() {
         const url = `${getApiOrigin()}/export/articles/${id}?${params.toString()}`;
         const res = await fetch(url, { headers: await authHeaders() });
         if (!res.ok) {
-          throw new Error(`${res.status} ${res.statusText} — ${await res.text()}`);
+          throw new Error(
+            `${res.status} ${res.statusText} — ${await res.text()}`,
+          );
         }
         const text = await res.text();
         setDoc(text);
@@ -156,8 +161,22 @@ export default function DebugSyncPage() {
         </p>
 
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <label style={{ fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <label
+              style={{
+                fontSize: 12,
+                display: "flex",
+                gap: 4,
+                alignItems: "center",
+              }}
+            >
               limit
               <input
                 type="number"
@@ -168,7 +187,14 @@ export default function DebugSyncPage() {
                 style={{ width: 70, ...inputStyle }}
               />
             </label>
-            <label style={{ fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}>
+            <label
+              style={{
+                fontSize: 12,
+                display: "flex",
+                gap: 4,
+                alignItems: "center",
+              }}
+            >
               sourceType
               <input
                 type="text"
@@ -178,7 +204,14 @@ export default function DebugSyncPage() {
                 style={{ width: 130, ...inputStyle }}
               />
             </label>
-            <label style={{ fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}>
+            <label
+              style={{
+                fontSize: 12,
+                display: "flex",
+                gap: 4,
+                alignItems: "center",
+              }}
+            >
               <input
                 type="checkbox"
                 checked={includeComments}
@@ -224,19 +257,29 @@ export default function DebugSyncPage() {
           {error ? (
             <div style={{ fontSize: 12, color: "var(--accent)" }}>{error}</div>
           ) : (
-            <div style={{ fontSize: 12, color: "var(--ink-3)", wordBreak: "break-all" }}>
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--ink-3)",
+                wordBreak: "break-all",
+              }}
+            >
               {status || "Run a poll to load articles."}
             </div>
           )}
           <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
             since:{" "}
-            <span style={{ fontFamily: "var(--mono-font)" }}>{lastSince || "—"}</span> ·
-            loaded {articles.length}
+            <span style={{ fontFamily: "var(--mono-font)" }}>
+              {lastSince || "—"}
+            </span>{" "}
+            · loaded {articles.length}
             {total !== null ? ` / ${total}` : ""}
           </div>
         </div>
 
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <table
+          style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}
+        >
           <thead>
             <tr style={{ textAlign: "left", color: "var(--ink-3)" }}>
               <th style={cellStyle}>id</th>
@@ -257,9 +300,13 @@ export default function DebugSyncPage() {
                     selectedId === a.id ? "var(--bg-alt)" : "transparent",
                 }}
               >
-                <td style={{ ...cellStyle, fontFamily: "var(--mono-font)" }}>{a.id}</td>
+                <td style={{ ...cellStyle, fontFamily: "var(--mono-font)" }}>
+                  {a.id}
+                </td>
                 <td style={cellStyle}>{a.title ?? "(untitled)"}</td>
-                <td style={{ ...cellStyle, color: "var(--ink-3)" }}>{a.sourceType}</td>
+                <td style={{ ...cellStyle, color: "var(--ink-3)" }}>
+                  {a.sourceType}
+                </td>
                 <td style={{ ...cellStyle, fontFamily: "var(--mono-font)" }}>
                   {a.commentCount}
                 </td>
@@ -295,7 +342,9 @@ export default function DebugSyncPage() {
               flexWrap: "wrap",
             }}
           >
-            <span style={{ fontFamily: "var(--mono-font)" }}>{docMeta.contentType}</span>
+            <span style={{ fontFamily: "var(--mono-font)" }}>
+              {docMeta.contentType}
+            </span>
             <span>{doc.length} chars</span>
             <a
               href={docMeta.url}
