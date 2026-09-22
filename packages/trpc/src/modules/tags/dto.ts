@@ -11,8 +11,13 @@ export const TagOutput = z.object({
   name: z.string(),
 });
 
+/** The list carries usage so the tag page can show what a change would touch. */
+export const TagListItem = TagOutput.extend({
+  itemCount: z.number(),
+});
+
 export const TagListOutput = z.object({
-  tags: z.array(TagOutput),
+  tags: z.array(TagListItem),
 });
 
 export const CreateTagInput = z.object({
@@ -21,8 +26,10 @@ export const CreateTagInput = z.object({
 });
 
 export const UpdateTagInput = z.object({
-  description: z.string().max(500).nullable(),
+  description: z.string().max(500).nullable().optional(),
   id: z.number(),
+  /** Renaming keeps the tag on every item that carries it. */
+  name: z.string().min(1).max(100).optional(),
 });
 
 export const UpdateTagOutput = TagOutput;
@@ -65,6 +72,7 @@ export const RemoveTagFromItemOutput = z.object({
 });
 
 export type TagOutputDTO = z.infer<typeof TagOutput>;
+export type TagListItemDTO = z.infer<typeof TagListItem>;
 export type UpdateTagInputDTO = z.infer<typeof UpdateTagInput>;
 export type UpdateTagOutputDTO = z.infer<typeof UpdateTagOutput>;
 export type TagListOutputDTO = z.infer<typeof TagListOutput>;
