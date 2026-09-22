@@ -31,6 +31,7 @@ type SidebarProps = {
   allTags: Array<{ name: string; count: number }>;
   sitesCount: number;
   onOpenSites: () => void;
+  onOpenTags: () => void;
 };
 
 export function LibrarySidebar(props: SidebarProps) {
@@ -66,6 +67,7 @@ function ExpandedSidebar({
   onToggleCollapse,
   sitesCount,
   onOpenSites,
+  onOpenTags,
 }: SidebarProps) {
   return (
     <>
@@ -199,7 +201,9 @@ function ExpandedSidebar({
           overflow: "auto",
         }}
       >
-        <NavHeader>Tags</NavHeader>
+        <NavHeader action={{ label: "Manage", onClick: onOpenTags }}>
+          Tags
+        </NavHeader>
         <div
           style={{
             display: "flex",
@@ -247,20 +251,46 @@ function ExpandedSidebar({
   );
 }
 
-function NavHeader({ children }: { children: React.ReactNode }) {
+function NavHeader({
+  action,
+  children,
+}: {
+  action?: { label: string; onClick: () => void };
+  children: React.ReactNode;
+}) {
   return (
     <div
       style={{
+        alignItems: "baseline",
+        display: "flex",
         fontFamily: "var(--mono-font)",
         fontSize: 10,
         fontWeight: 500,
         letterSpacing: "0.12em",
         textTransform: "uppercase",
         color: "var(--ink-3)",
+        justifyContent: "space-between",
         padding: "0 20px 8px",
       }}
     >
       {children}
+      {action && (
+        <button
+          type="button"
+          onClick={action.onClick}
+          style={{
+            background: "transparent",
+            border: 0,
+            color: "var(--ink-4)",
+            font: "inherit",
+            letterSpacing: "inherit",
+            padding: 0,
+            textTransform: "inherit",
+          }}
+        >
+          {action.label}
+        </button>
+      )}
     </div>
   );
 }
