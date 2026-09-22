@@ -7,21 +7,18 @@
  * every consumer runs it through `safeNextPath` first.
  *
  * Not importable from a "use client" module by the edge proxy, so this file
- * stays free of React and of the browser: `proxy.ts`, `AuthGate` and the OAuth
- * callback all use it.
+ * stays free of React and of the browser: `proxy.ts`, `AuthGate` and the login
+ * page all use it.
  */
 
 export const NEXT_PARAM = "next";
-
-/** Key the OAuth round-trip parks the destination under. */
-export const NEXT_STORAGE_KEY = "nabit:auth:next";
 
 /**
  * The paths reachable without a session. One list, because the proxy, the
  * client gate and `safeNextPath` all have to agree on it: a path the gate lets
  * through but `safeNextPath` accepts as a destination is a redirect loop.
  */
-export const PUBLIC_PATH_PREFIXES = ["/login", "/auth/callback"];
+export const PUBLIC_PATH_PREFIXES = ["/login"];
 
 /** Exact match or a path beneath it — never a prefix like `/loginary`. */
 export function isPublicAuthPath(pathname: string): boolean {

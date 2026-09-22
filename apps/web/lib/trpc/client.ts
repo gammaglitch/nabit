@@ -1,6 +1,6 @@
 import type { AppRouter } from "@repo/trpc/types";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
-import { getBrowserSupabaseAccessToken } from "@/lib/supabase/client";
+import { getAccessToken } from "@/lib/auth/token";
 
 const fallbackApiUrl = "http://127.0.0.1:3001/trpc";
 
@@ -17,7 +17,7 @@ export function createTrpcClient() {
     links: [
       httpBatchLink({
         async headers() {
-          const accessToken = await getBrowserSupabaseAccessToken();
+          const accessToken = getAccessToken();
 
           if (!accessToken) {
             return {};

@@ -1,51 +1,84 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { type FormEvent, useState } from "react";
 import { Mark } from "@/features/shared/components/Mark";
-import {
-  NEXT_PARAM,
-  NEXT_STORAGE_KEY,
-  safeNextPath,
-} from "@/lib/auth/next-path";
-import {
-  getBrowserSupabaseClient,
-  getBrowserSupabaseRedirectUrl,
-} from "@/lib/supabase/client";
+import { getAuthClient } from "@/lib/auth/client";
+import { NEXT_PARAM, safeNextPath } from "@/lib/auth/next-path";
+import { syncSessionCookie } from "@/lib/auth/session-cookie";
+
+type Mode = "sign-in" | "sign-up";
+
+const fieldStyle = {
+  width: "100%",
+  padding: "10px 12px",
+  marginBottom: 12,
+  border: "1px solid var(--rule)",
+  background: "var(--bg)",
+  color: "var(--ink)",
+  fontFamily: "var(--mono-font)",
+  fontSize: 13,
+  outline: "none",
+} as const;
+
+const labelStyle = {
+  display: "block",
+  marginBottom: 4,
+  fontFamily: "var(--mono-font)",
+  fontSize: 10,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  color: "var(--ink-3)",
+} as const;
 
 export default function LoginPage() {
+  const router = useRouter();
+  const [mode, setMode] = useState<Mode>("sign-in");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const signIn = async () => {
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
     setBusy(true);
     setError(null);
+
+    const auth = getAuthClient();
     try {
-      // The provider round-trip cannot carry a query param of ours, so the
-      // destination waits here until /auth/callback comes back for it.
+      const { error: authError } =
+        mode === "sign-in"
+          ? await auth.signIn.email({ email, password })
+          : await auth.signUp.email({
+              email,
+              // Required by Better Auth; nothing shows it yet.
+              name: email.split("@")[0] || email,
+              password,
+            });
+      if (authError) {
+        setError(authError.message ?? "Could not sign in.");
+        setBusy(false);
+        return;
+      }
+
+      // The proxy decides by cookie, so it has to be set before navigating
+      // or the next page request bounces straight back here.
+      const { data } = await auth.getSession();
+      syncSessionCookie(data?.session.expiresAt ?? null);
+
       const next = safeNextPath(
         new URLSearchParams(window.location.search).get(NEXT_PARAM),
       );
-      try {
-        if (next) window.sessionStorage.setItem(NEXT_STORAGE_KEY, next);
-        else window.sessionStorage.removeItem(NEXT_STORAGE_KEY);
-      } catch {
-        // Private browsing modes throw on sessionStorage. Signing in still
-        // works; it just lands on the library rather than where you started.
-      }
-
-      const supabase = getBrowserSupabaseClient();
-      const { error: signInError } = await supabase.auth.signInWithOAuth({
-        provider: "github",
-        options: { redirectTo: getBrowserSupabaseRedirectUrl() },
-      });
-      if (signInError) {
-        setError(signInError.message);
-        setBusy(false);
-      }
+      router.replace(next ?? "/items");
     } catch {
-      setError("Failed to start sign in.");
+      setError("Could not reach the server.");
       setBusy(false);
     }
+  };
+
+  const switchMode = () => {
+    setMode(mode === "sign-in" ? "sign-up" : "sign-in");
+    setError(null);
   };
 
   return (
@@ -100,7 +133,7 @@ export default function LoginPage() {
               color: "var(--ink-3)",
             }}
           >
-            Sign in
+            {mode === "sign-in" ? "Sign in" : "Create account"}
           </span>
         </div>
         <div style={{ padding: "28px 24px" }}>
@@ -143,24 +176,77 @@ export default function LoginPage() {
             </div>
           )}
 
+          <form onSubmit={(event) => void submit(event)}>
+            <label htmlFor="login-email" style={labelStyle}>
+              Email
+            </label>
+            <input
+              id="login-email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              style={fieldStyle}
+            />
+            <label htmlFor="login-password" style={labelStyle}>
+              Password
+            </label>
+            <input
+              id="login-password"
+              type="password"
+              autoComplete={
+                mode === "sign-in" ? "current-password" : "new-password"
+              }
+              required
+              minLength={8}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              style={fieldStyle}
+            />
+            <button
+              type="submit"
+              disabled={busy}
+              style={{
+                width: "100%",
+                marginTop: 4,
+                padding: "12px 16px",
+                border: "1px solid var(--ink)",
+                background: busy ? "var(--bg-alt)" : "var(--ink)",
+                color: busy ? "var(--ink-3)" : "var(--bg)",
+                fontFamily: "var(--mono-font)",
+                fontSize: 12,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                fontWeight: 600,
+              }}
+            >
+              {busy
+                ? "One moment…"
+                : mode === "sign-in"
+                  ? "Sign in"
+                  : "Create account"}
+            </button>
+          </form>
+
           <button
             type="button"
-            disabled={busy}
-            onClick={() => void signIn()}
+            onClick={switchMode}
             style={{
-              width: "100%",
-              padding: "12px 16px",
-              border: "1px solid var(--ink)",
-              background: busy ? "var(--bg-alt)" : "var(--ink)",
-              color: busy ? "var(--ink-3)" : "var(--bg)",
+              marginTop: 14,
+              padding: 0,
+              border: "none",
+              background: "none",
+              color: "var(--ink-3)",
               fontFamily: "var(--mono-font)",
-              fontSize: 12,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              fontWeight: 600,
+              fontSize: 11,
+              textDecoration: "underline",
+              cursor: "pointer",
             }}
           >
-            {busy ? "Redirecting…" : "Sign in with GitHub"}
+            {mode === "sign-in"
+              ? "New here? Create an account"
+              : "Have an account? Sign in"}
           </button>
 
           <p
