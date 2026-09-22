@@ -17,7 +17,9 @@ export const taggingRouter = router({
     .input(SuggestTagsInput)
     .output(SuggestTagsOutput)
     .mutation(async ({ ctx, input }) => {
-      return ctx.services.tagging.suggest(input);
+      return ctx.services.tagging.suggest(input, {
+        userId: ctx.user.userId,
+      });
     }),
   /** How many items a bulk run would weigh, before committing to one. */
   estimateRun: authedProcedure

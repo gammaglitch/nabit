@@ -144,7 +144,7 @@ describe("JevClient answers", () => {
 describe("FindService.search", () => {
   test("screens every passage, ranks matches, and narrows each to a sentence", async () => {
     const jev = fakeJev();
-    const service = new FindService(makeEnv(), jev.fetcher);
+    const service = new FindService(makeEnv(), undefined, jev.fetcher);
 
     const result = await service.search({
       passages: [
@@ -196,7 +196,7 @@ describe("FindService.search", () => {
 
   test("searches only the start of an article too long to screen", async () => {
     const jev = fakeJev();
-    const service = new FindService(makeEnv(), jev.fetcher);
+    const service = new FindService(makeEnv(), undefined, jev.fetcher);
     const passages = Array.from(
       { length: (MAX_SCREEN_BATCHES + 1) * SCREEN_BATCH_PASSAGES },
       (_, index) => `Passage ${index}.`,
@@ -211,7 +211,7 @@ describe("FindService.search", () => {
   test("retries once when the endpoint fails", async () => {
     const jev = fakeJev();
     let calls = 0;
-    const service = new FindService(makeEnv(), async (url, init) => {
+    const service = new FindService(makeEnv(), undefined, async (url, init) => {
       calls++;
       return calls === 1 ? json({}, 503) : jev.fetcher(url, init);
     });
@@ -226,7 +226,7 @@ describe("FindService.search", () => {
   });
 
   test("passes OpenRouter's own error message through", async () => {
-    const service = new FindService(makeEnv(), async () =>
+    const service = new FindService(makeEnv(), undefined, async () =>
       json({ error: { code: 402, message: "Insufficient credits" } }, 402),
     );
 
@@ -237,7 +237,7 @@ describe("FindService.search", () => {
 
   test("keeps a match when narrowing it to a sentence fails", async () => {
     const jev = fakeJev();
-    const service = new FindService(makeEnv(), async (url, init) => {
+    const service = new FindService(makeEnv(), undefined, async (url, init) => {
       const body = JSON.parse(String(init.body)) as DecisionsBody;
       return "e0" in body.questions
         ? json({ answers: {}, model: "m" })
@@ -255,7 +255,11 @@ describe("FindService.search", () => {
   });
 
   test("refuses without an API key", async () => {
-    const service = new FindService(makeEnv(null), fakeJev().fetcher);
+    const service = new FindService(
+      makeEnv(null),
+      undefined,
+      fakeJev().fetcher,
+    );
 
     await expect(
       service.search({ passages: ["text"], query: "q" }),

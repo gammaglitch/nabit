@@ -10,9 +10,11 @@ import {
   mapConcurrent,
   UNTRUSTED_NOTE,
 } from "../../lib/jev";
+import type { UsageService } from "../usage/service";
 
 type FindServiceContract = TrpcServices["find"];
 type FindSearchInput = Parameters<FindServiceContract["search"]>[0];
+type Actor = Parameters<FindServiceContract["search"]>[1];
 type FindSearchOutput = Awaited<ReturnType<FindServiceContract["search"]>>;
 type FindMatch = FindSearchOutput["matches"][number];
 
@@ -30,10 +32,14 @@ const MAX_EXCERPT_SENTENCES = 60;
 export class FindService implements FindServiceContract {
   constructor(
     private readonly env: AppEnv,
+    private readonly usage?: UsageService,
     private readonly fetcher?: JevFetcher,
   ) {}
 
-  async search(input: FindSearchInput): Promise<FindSearchOutput> {
+  async search(
+    input: FindSearchInput,
+    actor: Actor = { userId: null },
+  ): Promise<FindSearchOutput> {
     const apiKey = this.env.openrouter.apiKey;
     if (!apiKey) {
       throw new TRPCError({
@@ -41,7 +47,21 @@ export class FindService implements FindServiceContract {
         message: "Find is not configured: set OPENROUTER_API_KEY on the API.",
       });
     }
-    const jev = new JevClient(apiKey, this.fetcher, "Find");
+    const jev = new JevClient(apiKey, this.fetcher, "Find", (call) =>
+      this.usage?.record({
+        completionTokens: call.completionTokens,
+        costUsd: call.costUsd,
+        durationMs: call.durationMs,
+        errorMessage: call.error ?? null,
+        feature: "find",
+        generationId: call.generationId,
+        model: call.model,
+        promptTokens: call.promptTokens,
+        status: call.error ? "error" : "success",
+        totalTokens: call.totalTokens,
+        userId: actor.userId,
+      }),
+    );
 
     const batches = batchPassages(input.passages);
     const screened = batches.slice(0, MAX_SCREEN_BATCHES);

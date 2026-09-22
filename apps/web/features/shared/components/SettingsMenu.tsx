@@ -210,6 +210,22 @@ export function SettingsMenu() {
               Manage tags and their descriptions →
             </a>
           </div>
+
+          <div style={{ borderTop: "1px solid var(--rule)", padding: 14 }}>
+            <div style={labelStyle}>Spend</div>
+            <a
+              href="/usage"
+              style={{
+                color: "var(--ink-2)",
+                fontFamily: "var(--mono-font)",
+                fontSize: 11,
+                textDecoration: "underline",
+                textUnderlineOffset: 3,
+              }}
+            >
+              What the models have cost →
+            </a>
+          </div>
         </div>
       )}
     </div>

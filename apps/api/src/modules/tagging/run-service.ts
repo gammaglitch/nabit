@@ -5,6 +5,7 @@ import type { DatabaseState } from "../../db/client";
 import { tagRunsTable, tagRunTagsTable, tagsTable } from "../../db/schema";
 import type { AppEnv } from "../../lib/config/env";
 import { JevClient, type JevFetcher } from "../../lib/jev";
+import type { UsageService } from "../usage/service";
 import {
   applyMatches,
   type ClaimedRun,
@@ -40,6 +41,7 @@ export class TagRunService {
   constructor(
     private readonly database: DatabaseState,
     private readonly env: AppEnv,
+    private readonly usage?: UsageService,
     private readonly fetcher?: JevFetcher,
   ) {}
 
@@ -284,7 +286,15 @@ export class TagRunService {
       throw new Error("OPENROUTER_API_KEY is not set");
     }
 
-    const jev = new JevClient(apiKey, this.fetcher, "Auto-tagging");
+    const jev = new JevClient(apiKey, this.fetcher, "Auto-tagging", (call) =>
+      this.usage?.record({
+        ...call,
+        errorMessage: call.error ?? null,
+        feature: "tag-run",
+        status: call.error ? "error" : "success",
+        tagRunId: claimed.id,
+      }),
+    );
     const tags = await runTags(db, claimed.id);
     const tagIds = tags.map((tag) => tag.id);
     let cursor = claimed.cursorItemId;

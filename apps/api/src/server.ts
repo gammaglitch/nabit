@@ -253,6 +253,7 @@ export async function buildApp() {
         abortSignal: abortController.signal,
         itemId,
         messages: messages as UIMessage[],
+        userId: req.user?.userId ?? null,
       });
     } catch (error) {
       if (error instanceof ChatNotConfiguredError) {
