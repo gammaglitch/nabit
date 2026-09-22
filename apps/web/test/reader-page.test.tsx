@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -143,6 +144,7 @@ const detailItem: MockItem = {
 const {
   useQueryMock,
   crawlGetMock,
+  findSearchMock,
   mutateDigestOptIn,
   mutateReextract,
   mutateDelete,
@@ -153,6 +155,7 @@ const {
 } = vi.hoisted(() => ({
   useQueryMock: vi.fn(),
   crawlGetMock: vi.fn(),
+  findSearchMock: vi.fn(),
   mutateDigestOptIn: vi.fn().mockResolvedValue({ digestOptIn: true, id: 1 }),
   mutateReextract: vi.fn(),
   mutateDelete: vi.fn().mockResolvedValue({ deleted: true }),
@@ -188,6 +191,15 @@ vi.mock("@/lib/trpc/react", () => {
       crawl: {
         get: {
           useQuery: (...args: unknown[]) => crawlGetMock(...args),
+        },
+      },
+      find: {
+        search: {
+          useMutation: () => ({
+            isPending: false,
+            mutate: vi.fn(),
+            mutateAsync: (...args: unknown[]) => findSearchMock(...args),
+          }),
         },
       },
       ingest: {
@@ -794,5 +806,112 @@ describe("ReaderPage", () => {
       "href",
       "https://rentry.org/megathread-anime",
     );
+  });
+
+  describe("semantic find", () => {
+    beforeEach(() => {
+      findSearchMock.mockReset();
+      useQueryMock.mockReturnValue({
+        data: { item: detailItem },
+        error: null,
+        isLoading: false,
+      });
+    });
+
+    test("cmd+f opens the find bar instead of the browser's", () => {
+      render(<ReaderPage id={1} />);
+
+      const event = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "f",
+        metaKey: true,
+      });
+      act(() => {
+        window.dispatchEvent(event);
+      });
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(
+        screen.getByRole("textbox", { name: "Find by meaning" }),
+      ).toBeInTheDocument();
+    });
+
+    test("sends the rendered passages and steps through the matches", async () => {
+      findSearchMock.mockImplementation(
+        async (input: { passages: string[] }) => ({
+          matches: [
+            {
+              passage: input.passages.indexOf("A heading"),
+              confidence: 0.97,
+              quote: null,
+            },
+            {
+              passage: input.passages.findIndex((p) =>
+                p.startsWith("Here is a paragraph"),
+              ),
+              confidence: 0.64,
+              quote: "bold text",
+            },
+          ],
+          model: "typesafe/jev-1.13-20260917",
+          truncated: false,
+        }),
+      );
+      render(<ReaderPage id={1} />);
+      fireEvent.keyDown(window, { ctrlKey: true, key: "f" });
+
+      const input = screen.getByRole("textbox", { name: "Find by meaning" });
+      fireEvent.change(input, { target: { value: "what is emphasized" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(await screen.findByText("1/2")).toBeInTheDocument();
+      expect(screen.getByText("97% match")).toBeInTheDocument();
+      const [request] = findSearchMock.mock.calls[0] as [
+        { passages: string[]; query: string },
+      ];
+      expect(request.query).toBe("what is emphasized");
+      // What the reader shows, flattened: markdown syntax never reaches the
+      // model, so its picks map back onto rendered text.
+      expect(request.passages).toContain(
+        "Here is a paragraph with bold text and an example link.",
+      );
+
+      // Enter on an unchanged query moves on rather than searching again.
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(screen.getByText("2/2")).toBeInTheDocument();
+      expect(screen.getByText("64% match")).toBeInTheDocument();
+      expect(findSearchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test("Escape closes the find bar before it leaves the reader", () => {
+      render(<ReaderPage id={1} />);
+      fireEvent.keyDown(window, { ctrlKey: true, key: "f" });
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(
+        screen.queryByRole("textbox", { name: "Find by meaning" }),
+      ).not.toBeInTheDocument();
+      expect(routerPush).not.toHaveBeenCalled();
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(routerPush).toHaveBeenCalledWith("/items");
+    });
+
+    test("shows why a search failed", async () => {
+      findSearchMock.mockRejectedValue(
+        new Error("Find failed: Insufficient credits"),
+      );
+      render(<ReaderPage id={1} />);
+      fireEvent.keyDown(window, { ctrlKey: true, key: "f" });
+
+      const input = screen.getByRole("textbox", { name: "Find by meaning" });
+      fireEvent.change(input, { target: { value: "anything" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(
+        await screen.findByText("Find failed: Insufficient credits"),
+      ).toBeInTheDocument();
+    });
   });
 });

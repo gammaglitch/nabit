@@ -17,6 +17,10 @@ import type {
   TriggerDigestInputDTO,
   TriggerDigestOutputDTO,
 } from "./modules/digest/dto";
+import type {
+  FindSearchInputDTO,
+  FindSearchOutputDTO,
+} from "./modules/find/dto";
 import type { HealthCheckOutputDTO } from "./modules/health/dto";
 import type {
   HelloWorldInputDTO,
@@ -117,6 +121,11 @@ export interface TrpcServices {
     trigger(
       input: TriggerDigestInputDTO,
     ): TriggerDigestOutputDTO | Promise<TriggerDigestOutputDTO>;
+  };
+  find: {
+    search(
+      input: FindSearchInputDTO,
+    ): FindSearchOutputDTO | Promise<FindSearchOutputDTO>;
   };
   health: {
     check(input: {

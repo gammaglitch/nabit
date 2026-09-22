@@ -1,6 +1,7 @@
 import { router } from "../lib/trpc/core";
 import { crawlRouter } from "../modules/crawl/router";
 import { digestRouter } from "../modules/digest/router";
+import { findRouter } from "../modules/find/router";
 import { healthRouter } from "../modules/health/router";
 import { helloRouter } from "../modules/hello/router";
 import { ingestRouter } from "../modules/ingest/router";
@@ -10,6 +11,7 @@ import { tagsRouter } from "../modules/tags/router";
 export const appRouter = router({
   crawl: crawlRouter,
   digest: digestRouter,
+  find: findRouter,
   health: healthRouter,
   hello: helloRouter,
   ingest: ingestRouter,

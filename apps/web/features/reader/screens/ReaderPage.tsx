@@ -38,12 +38,17 @@ import { CommentTree } from "../components/CommentTree";
 import { DeleteItemButton } from "../components/DeleteItemButton";
 import { MarkdownArticle } from "../components/MarkdownArticle";
 import { ReextractButton } from "../components/ReextractButton";
+import { SemanticFindBar } from "../components/SemanticFindBar";
+import { useSemanticFind } from "../hooks/use-semantic-find";
 
 type RailTab = "comments" | "chat";
 
 export default function ReaderPage({ id }: { id: number }) {
   const router = useRouter();
   const tagBtnRef = useRef<HTMLButtonElement | null>(null);
+  const articleRef = useRef<HTMLDivElement | null>(null);
+  const find = useSemanticFind(articleRef);
+  const { close: closeFind, open: openFind, isOpen: findOpen } = find;
   const [tagAnchor, setTagAnchor] = useState<TagPickerAnchor | null>(null);
   const [railTab, setRailTab] = useState<RailTab>("comments");
   const { isStarred, toggleStarred } = useStarred();
@@ -128,13 +133,38 @@ export default function ReaderPage({ id }: { id: number }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !tagAnchor) {
-        router.push("/items");
-      }
+      if (e.key !== "Escape" || tagAnchor) return;
+      // Escape backs out one layer at a time: the find bar first, the reader
+      // only once nothing is open over it.
+      if (findOpen) closeFind();
+      else router.push("/items");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router, tagAnchor]);
+  }, [router, tagAnchor, findOpen, closeFind]);
+
+  // cmd+f / ctrl+f opens the semantic find instead of the browser's. Pressed
+  // again while its box has focus, it falls through to the native find, so an
+  // exact-spelling search is always one more keystroke away.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey)
+        return;
+      if (event.key.toLowerCase() !== "f") return;
+      if (findOpen && document.activeElement === find.inputRef.current) return;
+      event.preventDefault();
+      openFind();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [findOpen, openFind, find.inputRef]);
+
+  // Results point at elements of the article on screen; another article
+  // means none of them exist any more.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on navigation
+  useEffect(() => {
+    closeFind();
+  }, [id, closeFind]);
 
   // j/k walks the site the way it does in the site browser, in tree order and
   // skipping pages with nothing to read. Bound only for a crawled page, so the
@@ -468,232 +498,247 @@ export default function ReaderPage({ id }: { id: number }) {
             </nav>
           </aside>
         )}
+        {/* The find bar sits outside the scrolling element so it stays put
+            while the article scrolls to each match underneath it. */}
         <div
           style={{
+            position: "relative",
             borderRight: "1px solid var(--rule)",
-            overflow: "auto",
+            minHeight: 0,
+            overflow: "hidden",
             background: "var(--bg)",
           }}
         >
-          <div
-            style={{
-              maxWidth: 680,
-              margin: "0 auto",
-              padding: "48px 56px 120px",
-            }}
-          >
+          <SemanticFindBar find={find} />
+          <div style={{ height: "100%", overflow: "auto" }}>
             <div
+              ref={articleRef}
               style={{
-                fontFamily: "var(--mono-font)",
-                fontSize: 10,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: "var(--ink-3)",
-                display: "flex",
-                gap: 16,
-                marginBottom: 24,
-                flexWrap: "wrap",
+                maxWidth: 680,
+                margin: "0 auto",
+                padding: "48px 56px 120px",
               }}
             >
-              <span>{sourceLabel(item.source)}</span>
-              {item.sourceCreatedAt && (
-                <>
-                  <span>·</span>
-                  <span>{item.sourceCreatedAt}</span>
-                </>
-              )}
-              {item.score !== null && (
-                <>
-                  <span>·</span>
-                  <span>↑ {item.score}</span>
-                </>
-              )}
-            </div>
-
-            <h1
-              style={{
-                fontFamily: "var(--read-font)",
-                fontSize: 44,
-                fontWeight: 700,
-                lineHeight: 1.05,
-                letterSpacing: "-0.025em",
-                marginBottom: 20,
-                textWrap: "balance",
-                color: "var(--ink)",
-                overflowWrap: "anywhere",
-                wordBreak: "break-word",
-                hyphens: "auto",
-              }}
-            >
-              {item.title}
-            </h1>
-
-            <div
-              style={{
-                fontFamily: "var(--mono-font)",
-                fontSize: 12,
-                color: "var(--ink-3)",
-                paddingBottom: 24,
-                borderBottom: "1px solid var(--rule)",
-                marginBottom: 32,
-              }}
-            >
-              {item.author && <>{item.author} · </>}
-              {item.source === "reddit" ? item.subreddit : item.domain}
-              <span
-                style={{
-                  marginLeft: 12,
-                  display: "inline-flex",
-                  gap: 4,
-                  flexWrap: "wrap",
-                  verticalAlign: "middle",
-                }}
-              >
-                {item.tags.map((t) => (
-                  <RemovableTag
-                    key={t.id}
-                    tag={t.name}
-                    onRemove={() => void removeTag(item.id, t.id)}
-                  />
-                ))}
-              </span>
-            </div>
-
-            {isThread && !hasLinkedArticle && item.excerpt && (
               <div
                 style={{
-                  borderLeft: "3px solid var(--accent)",
-                  padding: "16px 20px",
-                  background: "var(--bg-alt)",
-                  marginBottom: 24,
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: "var(--mono-font)",
-                    fontSize: 10,
-                    letterSpacing: "0.12em",
-                    textTransform: "uppercase",
-                    color: "var(--ink-3)",
-                    marginBottom: 8,
-                  }}
-                >
-                  Original post
-                  {item.author ? ` · ${item.author}` : null}
-                </div>
-                <div
-                  style={{
-                    fontFamily: "var(--read-font)",
-                    fontSize: 16,
-                    lineHeight: 1.55,
-                    color: "var(--ink)",
-                  }}
-                >
-                  {item.excerpt}
-                </div>
-              </div>
-            )}
-
-            {articleUrl && (
-              <div
-                style={{
-                  borderLeft: "3px solid var(--accent)",
-                  padding: "10px 16px",
-                  background: "var(--bg-alt)",
-                  marginBottom: 24,
                   fontFamily: "var(--mono-font)",
-                  fontSize: 11,
+                  fontSize: 10,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
                   color: "var(--ink-3)",
                   display: "flex",
-                  gap: 10,
+                  gap: 16,
+                  marginBottom: 24,
                   flexWrap: "wrap",
-                  alignItems: "baseline",
                 }}
               >
+                <span>{sourceLabel(item.source)}</span>
+                {item.sourceCreatedAt && (
+                  <>
+                    <span>·</span>
+                    <span>{item.sourceCreatedAt}</span>
+                  </>
+                )}
+                {item.score !== null && (
+                  <>
+                    <span>·</span>
+                    <span>↑ {item.score}</span>
+                  </>
+                )}
+              </div>
+
+              <h1
+                style={{
+                  fontFamily: "var(--read-font)",
+                  fontSize: 44,
+                  fontWeight: 700,
+                  lineHeight: 1.05,
+                  letterSpacing: "-0.025em",
+                  marginBottom: 20,
+                  textWrap: "balance",
+                  color: "var(--ink)",
+                  overflowWrap: "anywhere",
+                  wordBreak: "break-word",
+                  hyphens: "auto",
+                }}
+              >
+                {item.title}
+              </h1>
+
+              <div
+                style={{
+                  fontFamily: "var(--mono-font)",
+                  fontSize: 12,
+                  color: "var(--ink-3)",
+                  paddingBottom: 24,
+                  borderBottom: "1px solid var(--rule)",
+                  marginBottom: 32,
+                }}
+              >
+                {item.author && <>{item.author} · </>}
+                {item.source === "reddit" ? item.subreddit : item.domain}
                 <span
                   style={{
-                    letterSpacing: "0.12em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Linked article
-                </span>
-                <a
-                  href={articleUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    color: "var(--ink-2)",
-                    textDecoration: "underline",
-                    textUnderlineOffset: 3,
-                    overflowWrap: "anywhere",
-                  }}
-                >
-                  {linkedItem?.title ?? articleUrl}
-                </a>
-                <span
-                  style={{
+                    marginLeft: 12,
                     display: "inline-flex",
-                    alignItems: "center",
+                    gap: 4,
+                    flexWrap: "wrap",
+                    verticalAlign: "middle",
+                  }}
+                >
+                  {item.tags.map((t) => (
+                    <RemovableTag
+                      key={t.id}
+                      tag={t.name}
+                      onRemove={() => void removeTag(item.id, t.id)}
+                    />
+                  ))}
+                </span>
+              </div>
+
+              {isThread && !hasLinkedArticle && item.excerpt && (
+                <div
+                  style={{
+                    borderLeft: "3px solid var(--accent)",
+                    padding: "16px 20px",
+                    background: "var(--bg-alt)",
+                    marginBottom: 24,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontFamily: "var(--mono-font)",
+                      fontSize: 10,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: "var(--ink-3)",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Original post
+                    {item.author ? ` · ${item.author}` : null}
+                  </div>
+                  <div
+                    data-find-passage
+                    style={{
+                      fontFamily: "var(--read-font)",
+                      fontSize: 16,
+                      lineHeight: 1.55,
+                      color: "var(--ink)",
+                    }}
+                  >
+                    {item.excerpt}
+                  </div>
+                </div>
+              )}
+
+              {articleUrl && (
+                <div
+                  style={{
+                    borderLeft: "3px solid var(--accent)",
+                    padding: "10px 16px",
+                    background: "var(--bg-alt)",
+                    marginBottom: 24,
+                    fontFamily: "var(--mono-font)",
+                    fontSize: 11,
+                    color: "var(--ink-3)",
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    alignItems: "baseline",
+                  }}
+                >
+                  <span
+                    style={{
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Linked article
+                  </span>
+                  <a
+                    href={articleUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      color: "var(--ink-2)",
+                      textDecoration: "underline",
+                      textUnderlineOffset: 3,
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    {linkedItem?.title ?? articleUrl}
+                  </a>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    · {hostname(articleUrl)}
+                    <Icon name="external" size={10} />
+                  </span>
+                  {!hasLinkedArticle && <span>· not archived</span>}
+                </div>
+              )}
+
+              {markdown.trim().length > 0 ? (
+                raw.crawl ? (
+                  <MarkdownArticle
+                    markdown={markdown}
+                    onFollowInternalHref={followInternalHref}
+                    resolveInternalHref={resolveInternalHref}
+                  />
+                ) : (
+                  <MarkdownArticle markdown={markdown} />
+                )
+              ) : !isThread ? (
+                <p
+                  style={{
+                    fontFamily: "var(--mono-font)",
+                    color: "var(--ink-3)",
+                  }}
+                >
+                  [NO ARTICLE CONTENT EXTRACTED]
+                </p>
+              ) : null}
+
+              {item.sourceUrl && (
+                <div
+                  style={{
+                    marginTop: 40,
+                    padding: "16px 20px",
+                    border: "1px solid var(--rule)",
+                    fontFamily: "var(--mono-font)",
+                    fontSize: 11,
+                    color: "var(--ink-3)",
+                    display: "flex",
+                    flexDirection: "column",
                     gap: 4,
                   }}
                 >
-                  · {hostname(articleUrl)}
-                  <Icon name="external" size={10} />
-                </span>
-                {!hasLinkedArticle && <span>· not archived</span>}
-              </div>
-            )}
-
-            {markdown.trim().length > 0 ? (
-              raw.crawl ? (
-                <MarkdownArticle
-                  markdown={markdown}
-                  onFollowInternalHref={followInternalHref}
-                  resolveInternalHref={resolveInternalHref}
-                />
-              ) : (
-                <MarkdownArticle markdown={markdown} />
-              )
-            ) : !isThread ? (
-              <p
-                style={{
-                  fontFamily: "var(--mono-font)",
-                  color: "var(--ink-3)",
-                }}
-              >
-                [NO ARTICLE CONTENT EXTRACTED]
-              </p>
-            ) : null}
-
-            {item.sourceUrl && (
-              <div
-                style={{
-                  marginTop: 40,
-                  padding: "16px 20px",
-                  border: "1px solid var(--rule)",
-                  fontFamily: "var(--mono-font)",
-                  fontSize: 11,
-                  color: "var(--ink-3)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                }}
-              >
-                <div>
-                  <strong style={{ color: "var(--ink-2)" }}>snapshot_id</strong>{" "}
-                  &nbsp; rs_{item.id.toString().padStart(6, "0")}
+                  <div>
+                    <strong style={{ color: "var(--ink-2)" }}>
+                      snapshot_id
+                    </strong>{" "}
+                    &nbsp; rs_{item.id.toString().padStart(6, "0")}
+                  </div>
+                  <div>
+                    <strong style={{ color: "var(--ink-2)" }}>
+                      captured_at
+                    </strong>{" "}
+                    &nbsp; {new Date(item.savedAt).toISOString()}
+                  </div>
+                  <div>
+                    <strong style={{ color: "var(--ink-2)" }}>
+                      source_url
+                    </strong>{" "}
+                    &nbsp; {item.sourceUrl}
+                  </div>
                 </div>
-                <div>
-                  <strong style={{ color: "var(--ink-2)" }}>captured_at</strong>{" "}
-                  &nbsp; {new Date(item.savedAt).toISOString()}
-                </div>
-                <div>
-                  <strong style={{ color: "var(--ink-2)" }}>source_url</strong>{" "}
-                  &nbsp; {item.sourceUrl}
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
 

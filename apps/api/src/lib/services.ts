@@ -5,6 +5,7 @@ import { ChatService } from "../modules/chat/service";
 import { CrawlService } from "../modules/crawl/service";
 import { DigestService } from "../modules/digest/service";
 import { ExportService } from "../modules/export/service";
+import { FindService } from "../modules/find/service";
 import { HealthService } from "../modules/health/service";
 import { HelloService } from "../modules/hello/service";
 import { IngestService } from "../modules/ingest/service";
@@ -20,6 +21,7 @@ export interface ServiceContainer extends TrpcServices {
   crawl: CrawlService;
   digest: DigestService;
   export: ExportService;
+  find: FindService;
   health: HealthService;
   hello: HelloService;
   ingest: IngestService;
@@ -64,6 +66,7 @@ export function makeServices(options: MakeServicesOptions): ServiceContainer {
       settings,
     ),
     export: exportService,
+    find: new FindService(options.env),
     health: new HealthService({
       database: options.database,
       env: options.env,
