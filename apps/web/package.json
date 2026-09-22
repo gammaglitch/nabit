@@ -17,7 +17,6 @@
     "@ai-sdk/react": "^4.0.40",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "1.2.4",
-    "@repo/auth": "workspace:*",
     "@repo/shared": "workspace:*",
     "@repo/trpc": "workspace:*",
     "@tanstack/react-query": "5.95.2",

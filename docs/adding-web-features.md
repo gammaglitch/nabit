@@ -67,7 +67,6 @@ Reach for server-side calls only when you specifically need:
 
 Web may import from:
 
-- `@repo/auth`
 - `@repo/shared`
 - `@repo/trpc`
 

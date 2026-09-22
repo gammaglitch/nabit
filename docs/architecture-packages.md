@@ -17,24 +17,6 @@ Important rules:
 - frontend apps must not import from `apps/api`
 - keep this package free of server-runtime-only dependencies
 
-### `packages/auth`
-
-Purpose:
-
-- own shared auth-domain helpers that are safe for both web and mobile
-
-Current examples:
-
-- callback parsing
-- config validation helpers
-- session/user mapping helpers
-
-Important rules:
-
-- keep it framework-agnostic where possible
-- do not put web-only or mobile-only client setup here
-- do not put API JWT verification here
-
 ### `packages/shared`
 
 Purpose:
@@ -44,7 +26,7 @@ Purpose:
 Important rules:
 
 - do not turn this into a junk drawer
-- if logic is auth-specific, it belongs in `@repo/auth`
+- auth code lives with the app that uses it: session verification in `apps/api`, the sign-in client in `apps/web/lib/auth`
 - if logic is API-contract-specific, it belongs in `@repo/trpc`
 
 ## Build and Watch Pattern

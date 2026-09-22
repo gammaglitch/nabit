@@ -127,7 +127,6 @@ Keep web-specific auth behavior here, not in shared packages.
 
 The web app may import from:
 
-- `@repo/auth`
 - `@repo/shared`
 - `@repo/trpc`
 
