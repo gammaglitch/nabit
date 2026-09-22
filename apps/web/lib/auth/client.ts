@@ -12,6 +12,11 @@ function makeAuthClient() {
     basePath: "/api/auth",
     fetchOptions: {
       auth: { type: "Bearer", token: () => getAccessToken() ?? "" },
+      // Better Auth defaults to credentials: "include", which a cross-origin
+      // API only answers with Access-Control-Allow-Credentials. The bearer
+      // token is the whole session, so no cookies go out and CORS stays a
+      // plain origin reflect.
+      credentials: "omit",
       // The API is on another origin, so its session cookie never reaches
       // this app. The bearer plugin hands the token over in a header instead.
       onSuccess: (context) => {
