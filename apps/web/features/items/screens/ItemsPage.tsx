@@ -344,6 +344,7 @@ export default function ItemsPage() {
         allTags={sidebarTagList}
         sitesCount={sitesCount}
         onOpenSites={() => router.push("/sites")}
+        onOpenTags={() => router.push("/tags")}
       />
 
       <main
