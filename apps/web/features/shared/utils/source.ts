@@ -3,8 +3,7 @@ export type NormalizedSource = "article" | "hn" | "reddit" | "x";
 export function normalizeSource(sourceType: string): NormalizedSource {
   if (sourceType.startsWith("hacker_news")) return "hn";
   if (sourceType.startsWith("reddit")) return "reddit";
-  if (sourceType === "tweet" || sourceType.startsWith("twitter"))
-    return "x";
+  if (sourceType === "tweet" || sourceType.startsWith("twitter")) return "x";
   return "article";
 }
 

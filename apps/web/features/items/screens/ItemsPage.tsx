@@ -3,10 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/features/shared/components/Icon";
+import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
 import { useStarred } from "@/features/shared/hooks/useStarred";
-import { trpc } from "@/lib/trpc/react";
 import { StartCrawlModal } from "@/features/sites/components/StartCrawlModal";
 import { useCrawlList } from "@/features/sites/hooks/useCrawls";
+import { trpc } from "@/lib/trpc/react";
 import { BulkActionBar } from "../components/BulkActionBar";
 import { BulkTagPicker } from "../components/BulkTagPicker";
 import { CaptureModal } from "../components/CaptureModal";
@@ -15,7 +16,6 @@ import { LibrarySidebar } from "../components/LibrarySidebar";
 import { ListRow } from "../components/ListRow";
 import { PreviewPane } from "../components/PreviewPane";
 import { QueueStatus } from "../components/QueueStatus";
-import { SettingsMenu } from "@/features/shared/components/SettingsMenu";
 import { SortMenu } from "../components/SortMenu";
 import { SplitRow } from "../components/SplitRow";
 import { TagPicker, type TagPickerAnchor } from "../components/TagPicker";
@@ -29,8 +29,8 @@ import {
 } from "../utils/item-helpers";
 import {
   DEFAULT_SORT,
-  type SortSpec,
   SORT_FIELDS,
+  type SortSpec,
   sortItems,
 } from "../utils/item-sort";
 

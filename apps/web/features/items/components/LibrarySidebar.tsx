@@ -127,7 +127,12 @@ function ExpandedSidebar({
         </button>
       </div>
 
-      <div style={{ padding: "14px 0 8px", borderBottom: "1px solid var(--rule-soft)" }}>
+      <div
+        style={{
+          padding: "14px 0 8px",
+          borderBottom: "1px solid var(--rule-soft)",
+        }}
+      >
         {(
           [
             { id: "all", label: "Hoard", count: counts.all },
@@ -162,9 +167,17 @@ function ExpandedSidebar({
         {(
           [
             { id: "all", label: "Everything", count: counts.all },
-            { id: "article", label: sourceDescription("article"), count: counts.article },
+            {
+              id: "article",
+              label: sourceDescription("article"),
+              count: counts.article,
+            },
             { id: "hn", label: sourceDescription("hn"), count: counts.hn },
-            { id: "reddit", label: sourceDescription("reddit"), count: counts.reddit },
+            {
+              id: "reddit",
+              label: sourceDescription("reddit"),
+              count: counts.reddit,
+            },
             { id: "x", label: sourceDescription("x"), count: counts.x },
           ] as const
         ).map((n) => (
@@ -398,8 +411,7 @@ function CollapsedRail({
               style={{
                 fontSize: 9,
                 fontWeight: 700,
-                color:
-                  s.id === "all" ? "var(--ink-2)" : sourceColor(s.id),
+                color: s.id === "all" ? "var(--ink-2)" : sourceColor(s.id),
               }}
             >
               {s.label}
