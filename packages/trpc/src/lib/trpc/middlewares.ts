@@ -28,9 +28,22 @@ export function isUserAllowed(
     return true;
   }
 
-  const email = user.email?.trim().toLowerCase();
+  return isEmailListed(user.email, allowedEmails);
+}
+
+/**
+ * Whether `email` is on the list, case-insensitively. Unlike `isUserAllowed`
+ * an empty list matches nothing: this is the strict check sign-up uses, where
+ * no list means nobody may create an account.
+ */
+export function isEmailListed(
+  email: string | null | undefined,
+  allowedEmails: string[] | null,
+) {
+  const normalized = email?.trim().toLowerCase();
   return Boolean(
-    email && allowedEmails.some((entry) => entry.toLowerCase() === email),
+    normalized &&
+      allowedEmails?.some((entry) => entry.toLowerCase() === normalized),
   );
 }
 

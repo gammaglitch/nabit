@@ -15,6 +15,7 @@ import {
 } from "./modules/export/markdown";
 import { registerHelloHandlers } from "./modules/hello/handler";
 import authPlugin from "./plugins/auth";
+import betterAuthPlugin from "./plugins/better-auth";
 import busPlugin from "./plugins/bus";
 import dbPlugin from "./plugins/db";
 import trpcPlugin from "./plugins/trpc";
@@ -88,7 +89,12 @@ export async function buildApp() {
 
   app.decorate("env", getAppEnv());
 
-  await app.register(cors, { origin: true });
+  // The bearer plugin hands out session tokens in `set-auth-token`; the
+  // browser only lets the web app read it if it is exposed.
+  await app.register(cors, {
+    exposedHeaders: ["set-auth-token"],
+    origin: true,
+  });
 
   await app.register(dbPlugin);
   await app.register(busPlugin);
@@ -107,6 +113,7 @@ export async function buildApp() {
     logger: app.log,
   });
 
+  await app.register(betterAuthPlugin);
   await app.register(authPlugin);
   await app.register(websocketPlugin);
   await app.register(trpcPlugin);

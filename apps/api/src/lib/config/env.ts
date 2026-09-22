@@ -3,6 +3,13 @@ export interface AppEnv {
   apiToken: string | null;
   assetStoragePath: string;
   authRequired: boolean;
+  betterAuth: {
+    // Signs session tokens. Without it (or without a database) sign-in is off
+    // and the /api/auth routes answer 503.
+    secret: string | null;
+    trustedOrigins: string[];
+    url: string | null;
+  };
   headlessBrowser: {
     captureUrl: string | null;
     enabled: boolean;
@@ -51,6 +58,16 @@ export function getAppEnv(): AppEnv {
     // ALLOWED_EMAILS is ignored. Meant for private self-hosted deployments
     // that already gate the network path (local network, VPN, etc.).
     authRequired: process.env.AUTH_REQUIRED !== "false",
+    betterAuth: {
+      secret: process.env.BETTER_AUTH_SECRET?.trim() || null,
+      // Origins allowed to call the auth routes from a browser — the web app.
+      // Better Auth rejects sign-in from any other origin.
+      trustedOrigins: (parseList(process.env.AUTH_TRUSTED_ORIGINS) ?? []).map(
+        (origin) => new URL(origin).origin,
+      ),
+      // The API's public origin, used to build the auth endpoints' URLs.
+      url: parseOptionalUrl(process.env.BETTER_AUTH_URL),
+    },
     headlessBrowser: {
       captureUrl: headlessBrowserCaptureUrl,
       enabled: Boolean(headlessBrowserCaptureUrl),

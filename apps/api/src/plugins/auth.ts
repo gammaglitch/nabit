@@ -9,6 +9,7 @@ import {
   createAuthHeaderVerifier,
   InvalidAuthTokenError,
 } from "../lib/auth";
+import { AUTH_BASE_PATH } from "../lib/better-auth";
 
 // Used when AUTH_REQUIRED=false — every request gets this user so downstream
 // `authedProcedure` checks pass without a JWT. See apps/api/src/lib/config/env.ts.
@@ -27,6 +28,12 @@ export default fp(async (app) => {
   app.decorateRequest("user", null);
 
   app.addHook("onRequest", async (req, reply) => {
+    // Better Auth checks its own credentials. A stale token left in the
+    // client must not 401 the sign-in that would replace it.
+    if (req.url.startsWith(`${AUTH_BASE_PATH}/`)) {
+      return;
+    }
+
     if (!authRequired) {
       req.user = LOCAL_USER;
       return;
