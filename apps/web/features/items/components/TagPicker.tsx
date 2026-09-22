@@ -39,7 +39,7 @@ export function TagPicker({
   const [cursor, setCursor] = useState(0);
   // Suggestions are asked for, never fetched on open: each run is a paid Jev
   // request, and most tagging is a click the user already knows they want.
-  const suggest = trpc.tags.suggest.useMutation();
+  const suggest = trpc.tagging.suggest.useMutation();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
