@@ -124,7 +124,12 @@ describeWithDb("TagRunService against Postgres", () => {
 
   test("scores the library, then applies only once asked", async () => {
     const jev = fakeJev();
-    const service = new TagRunService(database, makeEnv(), jev.fetcher);
+    const service = new TagRunService(
+      database,
+      makeEnv(),
+      undefined,
+      jev.fetcher,
+    );
     const tagIds = seeded.tags.map((tag) => tag.id);
 
     // Items without a body are not candidates.
@@ -179,7 +184,12 @@ describeWithDb("TagRunService against Postgres", () => {
 
   test("a rerun skips items that already carry every chosen tag", async () => {
     const jev = fakeJev();
-    const service = new TagRunService(database, makeEnv(), jev.fetcher);
+    const service = new TagRunService(
+      database,
+      makeEnv(),
+      undefined,
+      jev.fetcher,
+    );
     const tagIds = seeded.tags.map((tag) => tag.id);
 
     const first = await service.startRun({ tagIds }, { userId: null });
@@ -202,7 +212,12 @@ describeWithDb("TagRunService against Postgres", () => {
   });
 
   test("a cancelled run stops scoring and writes nothing", async () => {
-    const service = new TagRunService(database, makeEnv(), fakeJev().fetcher);
+    const service = new TagRunService(
+      database,
+      makeEnv(),
+      undefined,
+      fakeJev().fetcher,
+    );
     const tagIds = seeded.tags.map((tag) => tag.id);
     const run = await service.startRun({ tagIds }, { userId: null });
 
@@ -217,7 +232,12 @@ describeWithDb("TagRunService against Postgres", () => {
   });
 
   test("a run whose worker died resumes from its cursor", async () => {
-    const service = new TagRunService(database, makeEnv(), fakeJev().fetcher);
+    const service = new TagRunService(
+      database,
+      makeEnv(),
+      undefined,
+      fakeJev().fetcher,
+    );
     const tagIds = seeded.tags.map((tag) => tag.id);
     const run = await service.startRun({ tagIds }, { userId: null });
 

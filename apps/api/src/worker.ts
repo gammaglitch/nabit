@@ -7,6 +7,7 @@ import { ExportService } from "./modules/export/service";
 import { IngestService } from "./modules/ingest/service";
 import { SettingsService } from "./modules/settings/service";
 import { TagRunService } from "./modules/tagging/run-service";
+import { UsageService } from "./modules/usage/service";
 
 const workerId = process.env.WORKER_ID ?? `ingest-worker-${process.pid}`;
 const pollIntervalMs = Number(process.env.INGEST_WORKER_POLL_MS ?? 3000);
@@ -59,12 +60,16 @@ async function main() {
     onPageIngested: (input) => crawls.expand(input),
   });
   const settings = new SettingsService(database, env);
-  const tagRuns = new TagRunService(database, env);
+  // The worker spends as much as the API does: every call it makes lands in
+  // the same ledger.
+  const usage = new UsageService(database);
+  const tagRuns = new TagRunService(database, env, usage);
   const digests = new DigestService(
     database,
     env,
     new ExportService(database),
     settings,
+    usage,
   );
   console.info(
     {

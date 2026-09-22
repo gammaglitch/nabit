@@ -14,6 +14,7 @@ import {
   UNTRUSTED_NOTE,
 } from "../../lib/jev";
 import type { ExportService } from "../export/service";
+import type { UsageService } from "../usage/service";
 import { TagRunService } from "./run-service";
 
 type TaggingServiceContract = TrpcServices["tagging"];
@@ -48,9 +49,10 @@ export class TaggingService implements TaggingServiceContract {
     private readonly database: DatabaseState,
     private readonly exportService: ExportService,
     private readonly env: AppEnv,
+    private readonly usage?: UsageService,
     private readonly fetcher?: JevFetcher,
   ) {
-    this.runs = new TagRunService(database, env, fetcher);
+    this.runs = new TagRunService(database, env, usage, fetcher);
   }
 
   estimateRun: TagRunService["estimateRun"] = (input) =>
@@ -68,7 +70,10 @@ export class TaggingService implements TaggingServiceContract {
    * or ignores, because a tag written by a machine is indistinguishable from
    * one the user chose once it lands on the item.
    */
-  async suggest(input: SuggestInput): Promise<SuggestOutput> {
+  async suggest(
+    input: SuggestInput,
+    actor: { userId: number | null } = { userId: null },
+  ): Promise<SuggestOutput> {
     const apiKey = this.env.openrouter.apiKey;
     if (!apiKey) {
       throw new TRPCError({
@@ -93,7 +98,16 @@ export class TaggingService implements TaggingServiceContract {
 
     const weighed = candidates.slice(0, MAX_TAGS_WEIGHED);
     const scored = await scoreTags(
-      new JevClient(apiKey, this.fetcher, "Tag suggestions"),
+      new JevClient(apiKey, this.fetcher, "Tag suggestions", (call) =>
+        this.usage?.record({
+          ...call,
+          errorMessage: call.error ?? null,
+          feature: "tag-suggest",
+          itemId: input.itemId,
+          status: call.error ? "error" : "success",
+          userId: actor.userId,
+        }),
+      ),
       buildArticleState(article),
       weighed,
     );

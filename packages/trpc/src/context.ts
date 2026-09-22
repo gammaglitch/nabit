@@ -81,6 +81,11 @@ import type {
   UpdateTagOutputDTO,
 } from "./modules/tags/dto";
 
+import type {
+  UsageSummaryInputDTO,
+  UsageSummaryOutputDTO,
+} from "./modules/usage/dto";
+
 export type AuthUserRole = "admin" | "user";
 
 export interface AuthUser {
@@ -136,6 +141,7 @@ export interface TrpcServices {
   find: {
     search(
       input: FindSearchInputDTO,
+      actor: RequestActor,
     ): FindSearchOutputDTO | Promise<FindSearchOutputDTO>;
   };
   health: {
@@ -202,6 +208,7 @@ export interface TrpcServices {
   tagging: {
     suggest(
       input: SuggestTagsInputDTO,
+      actor: RequestActor,
     ): SuggestTagsOutputDTO | Promise<SuggestTagsOutputDTO>;
     estimateRun(
       input: StartTagRunInputDTO,
@@ -218,6 +225,11 @@ export interface TrpcServices {
     cancelRun(
       input: TagRunIdInputDTO,
     ): TagRunOutputDTO | Promise<TagRunOutputDTO>;
+  };
+  usage: {
+    summary(
+      input: UsageSummaryInputDTO,
+    ): UsageSummaryOutputDTO | Promise<UsageSummaryOutputDTO>;
   };
   tags: {
     list(): TagListOutputDTO | Promise<TagListOutputDTO>;

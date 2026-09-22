@@ -37,6 +37,19 @@ export interface NoulQuestion {
 
 export type JevQuestion = ChoiceQuestion | NoulQuestion;
 
+/** One request to the decisions endpoint, priced. */
+export interface JevCallReport {
+  completionTokens?: number | null;
+  costUsd?: number | null;
+  durationMs: number;
+  /** Set when the request failed; the call is still recorded. */
+  error?: string;
+  generationId?: string | null;
+  model: string;
+  promptTokens?: number | null;
+  totalTokens?: number | null;
+}
+
 export type JevFetcher = (url: string, init: RequestInit) => Promise<Response>;
 
 const ChoiceAnswer = z.object({
@@ -51,7 +64,16 @@ const NoulAnswer = z.object({ noul: z.number().min(0).max(1) });
 
 const DecisionsResponse = z.object({
   answers: z.record(z.string(), z.unknown()),
+  /** Absent on an older response; the ledger records what it can. */
+  id: z.string().optional(),
   model: z.string(),
+  usage: z
+    .object({
+      cost: z.number().optional(),
+      input_tokens: z.number().optional(),
+      output_tokens: z.number().optional(),
+    })
+    .optional(),
 });
 
 export type JevResponse = z.infer<typeof DecisionsResponse>;
@@ -61,6 +83,11 @@ export class JevClient {
     private readonly apiKey: string,
     private readonly fetcher: JevFetcher = fetch,
     private readonly feature = "Find",
+    /**
+     * Called once per request with what it cost. Jev prices every decision in
+     * its own response, so this is the charge rather than an estimate.
+     */
+    private readonly onCall?: (call: JevCallReport) => void,
   ) {}
 
   /** One decisions request: shared state, and questions answered in parallel. */
@@ -72,6 +99,7 @@ export class JevClient {
 
     for (let attempt = 0; ; attempt++) {
       const last = attempt === 1;
+      const startedAt = Date.now();
       let response: Response;
       try {
         response = await this.fetcher(DECISIONS_URL, {
@@ -85,12 +113,12 @@ export class JevClient {
         });
       } catch (error) {
         if (!last) continue;
-        throw this.error(
+        const message =
           error instanceof Error && error.name === "TimeoutError"
             ? "Jev did not answer in time"
-            : `could not reach OpenRouter (${String(error)})`,
-          error,
-        );
+            : `could not reach OpenRouter (${String(error)})`;
+        this.report({ durationMs: Date.now() - startedAt, error: message });
+        throw this.error(message, error);
       }
 
       if ((response.status === 429 || response.status >= 500) && !last) {
@@ -98,12 +126,37 @@ export class JevClient {
         continue;
       }
       if (!response.ok) {
-        throw this.error(await readErrorMessage(response));
+        const message = await readErrorMessage(response);
+        this.report({ durationMs: Date.now() - startedAt, error: message });
+        throw this.error(message);
       }
 
       const parsed = DecisionsResponse.safeParse(await response.json());
-      if (parsed.success) return parsed.data;
+      if (parsed.success) {
+        const usage = parsed.data.usage;
+        // Jev reports the two halves; the ledger also wants the sum, and only
+        // has one when both are present.
+        const totalTokens =
+          usage?.input_tokens !== undefined &&
+          usage?.output_tokens !== undefined
+            ? usage.input_tokens + usage.output_tokens
+            : null;
+        this.report({
+          completionTokens: usage?.output_tokens ?? null,
+          costUsd: usage?.cost ?? null,
+          durationMs: Date.now() - startedAt,
+          generationId: parsed.data.id ?? null,
+          model: parsed.data.model,
+          promptTokens: usage?.input_tokens ?? null,
+          totalTokens,
+        });
+        return parsed.data;
+      }
       if (last) {
+        this.report({
+          durationMs: Date.now() - startedAt,
+          error: "unexpected response from Jev",
+        });
         throw this.error("unexpected response from Jev", parsed.error);
       }
     }
@@ -129,6 +182,10 @@ export class JevClient {
       throw this.error("Jev answered a yes/no question with something else");
     }
     return parsed.data.noul;
+  }
+
+  private report(call: Omit<JevCallReport, "model"> & { model?: string }) {
+    this.onCall?.({ ...call, model: call.model ?? JEV_MODEL });
   }
 
   // Passed through verbatim: a key without credit or a retired model is only
