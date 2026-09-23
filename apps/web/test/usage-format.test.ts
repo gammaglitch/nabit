@@ -8,7 +8,9 @@ describe("formatUsd", () => {
 
   test("keeps four decimals below a cent, where most calls land", () => {
     expect(formatUsd(0.0004)).toBe("$0.0004");
-    expect(formatUsd(0.00004)).toBe("$0.0000");
+    // Four decimals would print this as "$0.0000", which reads as free; a
+    // single Jev decision really does cost this little.
+    expect(formatUsd(0.00004)).toBe("<$0.0001");
     expect(formatUsd(0.009_95)).toBe("$0.0100");
   });
 

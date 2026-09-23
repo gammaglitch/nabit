@@ -11,7 +11,24 @@ const DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
 // A decision normally takes well under a second. The alpha endpoint
 // occasionally hangs instead of failing, so a stuck call is cut and retried.
 const CALL_TIMEOUT_MS = 10_000;
-const RETRY_DELAY_MS = 500;
+// Three tries, backing off. The alpha endpoint answers 529 when TypeSafe is
+// overloaded and OpenRouter passes upstream 403s through from Cloudflare, and
+// both clear on their own — half a second was never long enough to outlast one.
+const DEFAULT_RETRY_DELAYS_MS = [1_000, 4_000, 10_000];
+
+/**
+ * Read per call so an instance can tune the backoff without a rebuild, and so
+ * a test can take it to zero rather than sitting out fifteen seconds of it.
+ */
+export function retryDelaysMs(): number[] {
+  const configured = process.env.JEV_RETRY_DELAYS_MS?.split(",")
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+
+  return configured && configured.length > 0
+    ? configured
+    : DEFAULT_RETRY_DELAYS_MS;
+}
 
 /**
  * Jev reads at most 32k tokens of state plus its largest question. Callers
@@ -96,9 +113,10 @@ export class JevClient {
     questions: Record<string, JevQuestion>,
   ): Promise<JevResponse> {
     const body = JSON.stringify({ model: JEV_MODEL, questions, state });
+    const delays = retryDelaysMs();
 
     for (let attempt = 0; ; attempt++) {
-      const last = attempt === 1;
+      const last = attempt >= delays.length - 1;
       const startedAt = Date.now();
       let response: Response;
       try {
@@ -112,7 +130,10 @@ export class JevClient {
           signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
         });
       } catch (error) {
-        if (!last) continue;
+        if (!last) {
+          await sleep(delays[attempt] ?? 0);
+          continue;
+        }
         const message =
           error instanceof Error && error.name === "TimeoutError"
             ? "Jev did not answer in time"
@@ -121,8 +142,8 @@ export class JevClient {
         throw this.error(message, error);
       }
 
-      if ((response.status === 429 || response.status >= 500) && !last) {
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      if (isTransient(response.status) && !last) {
+        await sleep(delays[attempt] ?? 0);
         continue;
       }
       if (!response.ok) {
@@ -250,7 +271,38 @@ async function readErrorMessage(response: Response): Promise<string> {
   const text = await response.text().catch(() => "");
   try {
     const message = JSON.parse(text)?.error?.message;
-    if (typeof message === "string" && message) return message;
+    if (typeof message === "string" && message) return summarize(message);
   } catch {}
   return `OpenRouter answered HTTP ${response.status}`;
+}
+
+/**
+ * Keeps a provider message readable.
+ *
+ * OpenRouter forwards whatever the upstream said, which has been a whole
+ * Cloudflare block page: several kilobytes of HTML that went into the ledger
+ * verbatim and then onto the spend page.
+ */
+export function summarize(message: string, limit = 300): string {
+  const flattened = message
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z]+;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return flattened.length > limit
+    ? `${flattened.slice(0, limit).trimEnd()}…`
+    : flattened;
+}
+
+// Worth another try: rate limits, overload (529), gateway errors, and the
+// upstream 403 a bot-protection page answers with.
+function isTransient(status: number): boolean {
+  return status === 403 || status === 408 || status === 429 || status >= 500;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -11,11 +11,13 @@ import {
   type ClaimedRun,
   countCandidateItems,
   isUnfinished,
+  itemsByIds,
   matchCounts,
   nextItemPage,
   runTags,
-  scorePage,
+  scoreItem,
 } from "./runs";
+import type { TagRow } from "./service";
 
 type TaggingContract = TrpcServices["tagging"];
 type StartInput = Parameters<TaggingContract["startRun"]>[0];
@@ -210,7 +212,8 @@ export class TagRunService {
         id,
         attempts,
         max_attempts as "maxAttempts",
-        cursor_item_id as "cursorItemId"
+        cursor_item_id as "cursorItemId",
+        failed_item_ids as "failedItemIds"
     `)) as unknown as ClaimedRun[];
 
     const claimed = rows[0];
@@ -298,46 +301,48 @@ export class TagRunService {
     const tags = await runTags(db, claimed.id);
     const tagIds = tags.map((tag) => tag.id);
     let cursor = claimed.cursorItemId;
+    // Carried across attempts: a run reclaimed after a crash resumes at its
+    // cursor, which would otherwise walk straight past what it could not score.
+    const failed = new Set(claimed.failedItemIds ?? []);
 
     for (;;) {
-      // Re-read rather than trust the claim: this is where a cancel lands.
-      const [state] = await db
-        .select({
-          itemsScored: tagRunsTable.itemsScored,
-          matchCount: tagRunsTable.matchCount,
-          status: tagRunsTable.status,
-        })
-        .from(tagRunsTable)
-        .where(eq(tagRunsTable.id, claimed.id))
-        .limit(1);
-      if (!state || state.status !== "scoring") return;
-
       const items = await nextItemPage(db, tagIds, cursor);
       if (items.length === 0) break;
 
-      const scored = await scorePage(db, jev, {
-        items,
+      for (const item of items) {
+        const outcome = await this.scoreOne(db, jev, {
+          failed,
+          item,
+          runId: claimed.id,
+          tags,
+        });
+        cursor = item.id;
+        if (outcome === "cancelled") return;
+      }
+    }
+
+    // One more go at the stragglers, now that whatever was overloaded has had
+    // the length of a library pass to recover.
+    for (const item of await itemsByIds(db, [...failed])) {
+      failed.delete(item.id);
+      const outcome = await this.scoreOne(db, jev, {
+        failed,
+        item,
+        retry: true,
         runId: claimed.id,
         tags,
       });
-      cursor = items[items.length - 1]?.id ?? cursor;
-
-      await db
-        .update(tagRunsTable)
-        .set({
-          cursorItemId: cursor,
-          itemsScored: state.itemsScored + items.length,
-          matchCount: state.matchCount + scored.matches,
-          model: scored.model ?? undefined,
-          updatedAt: new Date(),
-        })
-        .where(eq(tagRunsTable.id, claimed.id));
+      if (outcome === "cancelled") return;
     }
 
     await db
       .update(tagRunsTable)
       .set({
+        // Whatever failed is counted on the run, not thrown as an error: the
+        // items that did score are still worth showing and applying.
         errorMessage: null,
+        failedCount: failed.size,
+        failedItemIds: [...failed],
         finishedAt: new Date(),
         lockedAt: null,
         lockedBy: null,
@@ -345,6 +350,66 @@ export class TagRunService {
         updatedAt: new Date(),
       })
       .where(eq(tagRunsTable.id, claimed.id));
+  }
+
+  /**
+   * Scores one item and moves the run on by one.
+   *
+   * Progress is written per item rather than per page: a pass over a few
+   * hundred articles otherwise sat at zero for minutes, which read as a job
+   * that had died. The counters are incremented in SQL so a heartbeat or a
+   * concurrent update cannot lose a tick.
+   */
+  private async scoreOne(
+    db: Database,
+    jev: JevClient,
+    input: {
+      failed: Set<number>;
+      item: Awaited<ReturnType<typeof nextItemPage>>[number];
+      retry?: boolean;
+      runId: number;
+      tags: TagRow[];
+    },
+  ): Promise<"cancelled" | "done"> {
+    let matches = 0;
+    let model: string | null = null;
+
+    try {
+      const scored = await scoreItem(db, jev, {
+        item: input.item,
+        runId: input.runId,
+        tags: input.tags,
+      });
+      matches = scored.matches;
+      model = scored.model;
+    } catch (error) {
+      // One refused item is not a reason to abandon the library. It is
+      // remembered, retried once the pass is through, and counted if it still
+      // will not score.
+      input.failed.add(input.item.id);
+      console.error(error, `tag run ${input.runId} could not score an item`);
+    }
+
+    const [state] = await db
+      .update(tagRunsTable)
+      .set({
+        cursorItemId: input.retry ? undefined : input.item.id,
+        failedCount: input.failed.size,
+        failedItemIds: [...input.failed],
+        // A retried item was already counted on its first attempt.
+        itemsScored: input.retry
+          ? undefined
+          : sql`${tagRunsTable.itemsScored} + 1`,
+        matchCount: sql`${tagRunsTable.matchCount} + ${matches}`,
+        model: model ?? undefined,
+        updatedAt: new Date(),
+      })
+      .where(eq(tagRunsTable.id, input.runId))
+      .returning({ status: tagRunsTable.status });
+
+    // The same write tells us whether a cancel landed, so watching for one
+    // costs no extra query.
+    return state?.status === "scoring" ? "done" : "cancelled";
   }
 
   /** Tag ids that still exist, so a deleted tag cannot stall a run. */
@@ -376,6 +441,7 @@ export function toOutput(
     appliedCount: number;
     createdAt: Date;
     errorMessage: string | null;
+    failedCount: number;
     finishedAt: Date | null;
     id: number;
     itemsScored: number;
@@ -388,6 +454,7 @@ export function toOutput(
   return {
     appliedCount: run.appliedCount,
     errorMessage: run.errorMessage,
+    failedCount: run.failedCount,
     finishedAt: run.finishedAt?.toISOString() ?? null,
     id: run.id,
     itemsScored: run.itemsScored,

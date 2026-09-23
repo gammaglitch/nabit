@@ -52,6 +52,19 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
   const [open, setOpen] = useState(false);
   const seenSuccessful = useRef(new Set<number>());
 
+  // A tagging pass is background work like any capture, and it runs for
+  // minutes. Without it here the only sign anything was happening was the
+  // modal that started it.
+  const tagRunQuery = trpc.tagging.latestRun.useQuery(undefined, {
+    refetchInterval: (query) => {
+      const status = query.state.data?.run?.status;
+      return status === "pending" || status === "scoring" ? 2500 : 30_000;
+    },
+  });
+  const tagRun = tagRunQuery.data?.run ?? null;
+  const tagRunActive =
+    tagRun?.status === "pending" || tagRun?.status === "scoring";
+
   const jobsQuery = trpc.ingest.jobs.useQuery(
     { limit: 20 },
     {
@@ -125,7 +138,7 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
     return null;
   }
 
-  const idle = activeCount === 0 && failed.length === 0;
+  const idle = activeCount === 0 && failed.length === 0 && !tagRunActive;
 
   return (
     <>
@@ -171,7 +184,9 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
         <span>
           {idle
             ? "queue idle"
-            : `${activeCount} active · ${failed.length} failed`}
+            : tagRunActive && activeCount === 0 && failed.length === 0
+              ? `tagging ${tagRun.itemsScored}/${tagRun.itemsTotal}`
+              : `${activeCount} active · ${failed.length} failed`}
         </span>
       </button>
 
@@ -244,6 +259,12 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
             </div>
           )}
 
+          {tagRun && tagRunActive && (
+            <QueueSection title="Auto-tagging">
+              <TagRunRow run={tagRun} />
+            </QueueSection>
+          )}
+
           {grouped.working.length > 0 && (
             <QueueSection title="Working">
               {grouped.working.map((job, index) => (
@@ -273,6 +294,77 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
         </div>
       )}
     </>
+  );
+}
+
+/** The bulk tagging pass, shown while the worker is still scoring. */
+function TagRunRow({
+  run,
+}: {
+  run: NonNullable<RouterOutputs["tagging"]["latestRun"]["run"]>;
+}) {
+  const matched = run.matches.reduce((total, match) => total + match.count, 0);
+  const share =
+    run.itemsTotal > 0
+      ? Math.min(100, Math.round((run.itemsScored / run.itemsTotal) * 100))
+      : 0;
+
+  return (
+    <div
+      style={{
+        borderBottom: "1px solid var(--rule-soft)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        padding: "12px 20px",
+      }}
+    >
+      <div
+        style={{
+          color: "var(--ink-2)",
+          display: "flex",
+          fontFamily: "var(--mono-font)",
+          fontSize: 11,
+          justifyContent: "space-between",
+        }}
+      >
+        <span>
+          {run.status === "pending"
+            ? "waiting for the worker"
+            : "weighing tags against the library"}
+        </span>
+        <span style={{ color: "var(--ink-3)" }}>
+          {run.itemsScored}/{run.itemsTotal}
+        </span>
+      </div>
+      <div
+        aria-label={`${share}% scored`}
+        role="progressbar"
+        aria-valuemax={run.itemsTotal}
+        aria-valuemin={0}
+        aria-valuenow={run.itemsScored}
+        style={{ background: "var(--rule-soft)", height: 4, width: "100%" }}
+      >
+        <div
+          style={{
+            background: "var(--ink)",
+            height: "100%",
+            width: `${share}%`,
+          }}
+        />
+      </div>
+      <div
+        style={{
+          color: "var(--ink-3)",
+          fontFamily: "var(--mono-font)",
+          fontSize: 10,
+        }}
+      >
+        {matched} match{matched === 1 ? "" : "es"} so far
+        {run.failedCount > 0 ? ` · ${run.failedCount} could not be scored` : ""}
+        {" · nothing is applied until you approve it"}
+      </div>
+    </div>
   );
 }
 

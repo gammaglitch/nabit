@@ -158,6 +158,12 @@ vi.mock("@/lib/trpc/react", () => {
           }),
         },
       },
+      // The queue watches for a running tagging pass; this page has none.
+      tagging: {
+        latestRun: {
+          useQuery: () => ({ data: { run: null }, error: null }),
+        },
+      },
       tags: {
         list: {
           useQuery() {

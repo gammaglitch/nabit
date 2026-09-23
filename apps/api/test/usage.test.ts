@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { llmCallsTable } from "../src/db/schema";
-import { type JevCallReport, JevClient } from "../src/lib/jev";
+import { type JevCallReport, JevClient, summarize } from "../src/lib/jev";
 import { readOpenRouterUsage } from "../src/modules/usage/openrouter";
 import { UsageService } from "../src/modules/usage/service";
 
@@ -51,6 +51,23 @@ describe("readOpenRouterUsage", () => {
       promptTokens: null,
       totalTokens: null,
     });
+  });
+});
+
+describe("summarize", () => {
+  test("reduces an upstream block page to a line", () => {
+    const cloudflare = `HTTP 403: <!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title><style>body{margin:0}</style><script>var a=1;</script></head><body><h1>Sorry, you have been blocked</h1><h2>You are unable to access typesafe.ai</h2></body></html>`;
+
+    const summarized = summarize(cloudflare);
+
+    expect(summarized).not.toContain("<");
+    expect(summarized).not.toContain("margin:0");
+    expect(summarized).toContain("Sorry, you have been blocked");
+    expect(summarized.length).toBeLessThanOrEqual(301);
+  });
+
+  test("leaves an ordinary message alone", () => {
+    expect(summarize("Insufficient credits")).toBe("Insufficient credits");
   });
 });
 

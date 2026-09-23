@@ -610,6 +610,15 @@ export const tagRunsTable = schema.table(
     matchCount: t.integer("match_count").notNull().default(0),
     /** Rows actually written to item_tags when the run was applied. */
     appliedCount: t.integer("applied_count").notNull().default(0),
+    /** Items the provider refused even after the retry pass. */
+    failedCount: t.integer("failed_count").notNull().default(0),
+    // Kept, not just counted: a resumed run retries these at the end, and a
+    // cursor alone would have walked straight past them.
+    failedItemIds: t
+      .jsonb("failed_item_ids")
+      .$type<number[]>()
+      .notNull()
+      .default([]),
     // Scoring resumes from here rather than restarting: matches already
     // written are kept, so a retry does not re-pay for what it scored.
     cursorItemId: t.bigint("cursor_item_id", { mode: "number" }),

@@ -38,6 +38,8 @@ export const TagRunOutput = z.object({
   /** Rows written to item_tags, once applied. */
   appliedCount: z.number(),
   errorMessage: z.string().nullable(),
+  /** Items the provider refused even after the retry pass. */
+  failedCount: z.number(),
   finishedAt: z.string().nullable(),
   id: z.number(),
   itemsScored: z.number(),

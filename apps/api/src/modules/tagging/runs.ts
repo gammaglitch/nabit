@@ -31,6 +31,8 @@ export const SCORING_PAGE = 20;
 export interface ClaimedRun {
   attempts: number;
   cursorItemId: number | null;
+  /** Items an earlier attempt could not score; the retry pass goes back. */
+  failedItemIds: number[] | null;
   id: number;
   maxAttempts: number;
 }
@@ -113,55 +115,66 @@ export async function runTags(db: Database, runId: number): Promise<TagRow[]> {
 }
 
 /**
- * Scores one page of items against the run's tags and records what it would
- * do. Tags an item already has are never asked about again, so a resumed run
- * costs only what it has not already scored.
+ * Scores one item and records what it would gain.
+ *
+ * Throws on a provider failure rather than swallowing it: the caller decides
+ * whether one refused item is worth abandoning a pass over the library, and
+ * it is not.
  */
-export async function scorePage(
+export async function scoreItem(
   db: Database,
   jev: JevClient,
   input: {
-    items: Awaited<ReturnType<typeof nextItemPage>>;
+    item: Awaited<ReturnType<typeof nextItemPage>>[number];
     runId: number;
     tags: TagRow[];
   },
 ): Promise<{ matches: number; model: string | null }> {
-  let model: string | null = null;
-  let matches = 0;
-
-  for (const item of input.items) {
-    const applied = await db
-      .select({ tagId: itemTagsTable.tagId })
-      .from(itemTagsTable)
-      .where(eq(itemTagsTable.itemId, item.id));
-    const appliedIds = new Set(applied.map((row) => row.tagId));
-    const tags = input.tags.filter((tag) => !appliedIds.has(tag.id));
-    if (tags.length === 0) continue;
-
-    const scored = await scoreTags(jev, buildArticleState(item), tags, {
-      // A bulk pass wants every tag that fits, not a shortlist: the cap that
-      // keeps a suggestion list readable would silently drop matches here.
-      limit: tags.length,
-    });
-    model = scored.model;
-
-    if (scored.suggestions.length > 0) {
-      await db
-        .insert(tagRunMatchesTable)
-        .values(
-          scored.suggestions.map((suggestion) => ({
-            confidence: suggestion.confidence,
-            itemId: item.id,
-            runId: input.runId,
-            tagId: suggestion.id,
-          })),
-        )
-        .onConflictDoNothing();
-      matches += scored.suggestions.length;
-    }
+  const applied = await db
+    .select({ tagId: itemTagsTable.tagId })
+    .from(itemTagsTable)
+    .where(eq(itemTagsTable.itemId, input.item.id));
+  const appliedIds = new Set(applied.map((row) => row.tagId));
+  const tags = input.tags.filter((tag) => !appliedIds.has(tag.id));
+  if (tags.length === 0) {
+    return { matches: 0, model: null };
   }
 
-  return { matches, model };
+  const scored = await scoreTags(jev, buildArticleState(input.item), tags, {
+    // A bulk pass wants every tag that fits, not a shortlist: the cap that
+    // keeps a suggestion list readable would silently drop matches here.
+    limit: tags.length,
+  });
+
+  if (scored.suggestions.length > 0) {
+    await db
+      .insert(tagRunMatchesTable)
+      .values(
+        scored.suggestions.map((suggestion) => ({
+          confidence: suggestion.confidence,
+          itemId: input.item.id,
+          runId: input.runId,
+          tagId: suggestion.id,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
+  return { matches: scored.suggestions.length, model: scored.model };
+}
+
+/** The items a retry pass goes back for, by id. */
+export async function itemsByIds(db: Database, ids: number[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select({
+      contentMarkdown: itemsTable.contentMarkdown,
+      contentText: itemsTable.contentText,
+      id: itemsTable.id,
+      title: itemsTable.title,
+    })
+    .from(itemsTable)
+    .where(inArray(itemsTable.id, ids));
 }
 
 /** Per-tag counts of what the run would do, biggest first. */

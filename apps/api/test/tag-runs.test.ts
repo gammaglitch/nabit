@@ -111,15 +111,17 @@ async function seed() {
 
 const describeWithDb = url ? describe : describe.skip;
 
-describeWithDb("TagRunService against Postgres", () => {
-  let seeded: Awaited<ReturnType<typeof seed>>;
+let seeded: Awaited<ReturnType<typeof seed>>;
 
+// One connection for the file: closing it inside a describe would end it for
+// whatever runs next.
+afterAll(async () => {
+  await client?.end();
+});
+
+describeWithDb("TagRunService against Postgres", () => {
   beforeEach(async () => {
     seeded = await seed();
-  });
-
-  afterAll(async () => {
-    await client?.end();
   });
 
   test("scores the library, then applies only once asked", async () => {
@@ -256,5 +258,96 @@ describeWithDb("TagRunService against Postgres", () => {
 
     await service.processNextRun("test-worker");
     expect((await service.getRun({ id: run.id })).status).toBe("scored");
+  });
+});
+
+describeWithDb("a run that meets a refusing provider", () => {
+  // The real backoff is fifteen seconds across three attempts, which is the
+  // point of it; these assert the shape of the retrying, not the waiting.
+  const previousDelays = process.env.JEV_RETRY_DELAYS_MS;
+
+  beforeEach(async () => {
+    process.env.JEV_RETRY_DELAYS_MS = "0,0,0";
+    seeded = await seed();
+  });
+
+  afterAll(() => {
+    process.env.JEV_RETRY_DELAYS_MS = previousDelays;
+  });
+
+  /** Fails the first call for one item, however many times it is asked. */
+  function stubbornJev(failTitle: string) {
+    const jev = fakeJev();
+    let attempts = 0;
+    const fetcher = async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as {
+        state: { article: { title: string } };
+      };
+      if (body.state.article.title === failTitle) {
+        attempts++;
+        return new Response(
+          JSON.stringify({ error: { message: "HTTP 403: blocked" } }),
+          { headers: { "Content-Type": "application/json" }, status: 403 },
+        );
+      }
+      return jev.fetcher(url, init);
+    };
+    return { attempts: () => attempts, fetcher };
+  }
+
+  test("scores what it can and counts what it could not", async () => {
+    const stubborn = stubbornJev("Chisels");
+    const service = new TagRunService(
+      database,
+      makeEnv(),
+      undefined,
+      stubborn.fetcher,
+    );
+    const tagIds = seeded.tags.map((tag) => tag.id);
+    const run = await service.startRun({ tagIds }, { userId: null });
+
+    await service.processNextRun("test-worker");
+    const scored = await service.getRun({ id: run.id });
+
+    // One item refused throughout, the other still scored and is applyable.
+    expect(scored.status).toBe("scored");
+    expect(scored.failedCount).toBe(1);
+    expect(scored.itemsScored).toBe(2);
+    expect(scored.matches).toEqual([
+      expect.objectContaining({ count: 1, tagName: "postgres" }),
+    ]);
+
+    // Tried again after the pass, on top of the client's own retries.
+    expect(stubborn.attempts()).toBeGreaterThan(3);
+
+    const applied = await service.applyRun({ id: run.id });
+    expect(applied.appliedCount).toBe(1);
+  });
+
+  test("moves the counter one item at a time", async () => {
+    const seen: number[] = [];
+    const jev = fakeJev();
+    const service = new TagRunService(
+      database,
+      makeEnv(),
+      undefined,
+      async (url, init) => {
+        const [row] =
+          (await db
+            ?.select({ scored: tagRunsTable.itemsScored })
+            .from(tagRunsTable)) ?? [];
+        seen.push(row?.scored ?? -1);
+        return jev.fetcher(url, init);
+      },
+    );
+    const tagIds = seeded.tags.map((tag) => tag.id);
+    const run = await service.startRun({ tagIds }, { userId: null });
+
+    await service.processNextRun("test-worker");
+
+    // Progress before each call: 0 for the first item, 1 for the second — not
+    // a single jump at the end of a page.
+    expect(seen).toEqual([0, 1]);
+    expect((await service.getRun({ id: run.id })).itemsScored).toBe(2);
   });
 });

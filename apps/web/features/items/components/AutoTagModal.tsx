@@ -432,6 +432,16 @@ function ScoredPanel({
 
   return (
     <>
+      {run.failedCount > 0 && (
+        // Said plainly: the counts below are of what scored, and a retry pass
+        // has already been and gone for these.
+        <div
+          style={{ ...noteStyle, color: "var(--accent)", padding: "0 0 8px" }}
+        >
+          {run.failedCount} item{run.failedCount === 1 ? "" : "s"} could not be
+          scored and {run.failedCount === 1 ? "is" : "are"} not counted below.
+        </div>
+      )}
       <div style={{ maxHeight: 260, overflowY: "auto" }}>
         {nothing ? (
           <div
