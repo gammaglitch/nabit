@@ -152,20 +152,17 @@ describe("export endpoints", () => {
   const previousEnv = {
     authRequired: process.env.AUTH_REQUIRED,
     databaseUrl: process.env.DATABASE_URL,
-    supabaseUrl: process.env.SUPABASE_URL,
     websocketsEnabled: process.env.WEBSOCKETS_ENABLED,
   };
 
   beforeEach(() => {
     process.env.DATABASE_URL = "";
-    process.env.SUPABASE_URL = "";
     process.env.WEBSOCKETS_ENABLED = "";
   });
 
   afterEach(() => {
     process.env.AUTH_REQUIRED = previousEnv.authRequired;
     process.env.DATABASE_URL = previousEnv.databaseUrl;
-    process.env.SUPABASE_URL = previousEnv.supabaseUrl;
     process.env.WEBSOCKETS_ENABLED = previousEnv.websocketsEnabled;
   });
 

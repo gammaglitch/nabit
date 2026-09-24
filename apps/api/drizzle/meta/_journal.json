@@ -127,6 +127,13 @@
       "when": 1790193114390,
       "tag": "0017_tag_run_failures",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790280744766,
+      "tag": "0018_better_auth",
+      "breakpoints": true
     }
   ]
 }

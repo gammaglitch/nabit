@@ -56,7 +56,7 @@ Rough sketch of what's on deck. Not committed, not ordered.
 - **API**: Fastify + tRPC + Drizzle ORM (Bun runtime)
 - **Web**: Next.js + React 19 + Tailwind CSS v4
 - **Database**: PostgreSQL (with `ltree` + `tsvector`)
-- **Auth**: Supabase JWT
+- **Auth**: [Better Auth](https://www.better-auth.com) (email + password), served by the API
 
 ## Local development
 
@@ -91,7 +91,7 @@ For a local, one-command stack:
 
 ```bash
 cp .env.example .env
-# fill in the Supabase values in .env
+# set BETTER_AUTH_SECRET and ALLOWED_EMAILS in .env
 docker compose up --build
 ```
 
@@ -101,6 +101,23 @@ This starts:
 - `api` on `http://127.0.0.1:3001`
 - `ingest-worker` for background captures
 - `web` on `http://127.0.0.1:3000`
+
+### First sign-in
+
+Accounts live in nabit's own database; there is no outside auth provider.
+Only emails listed in `ALLOWED_EMAILS` can create one, and with the list
+empty nobody can. So before the first start:
+
+1. Generate a secret with `openssl rand -base64 32` and set it as
+   `BETTER_AUTH_SECRET`.
+2. Put your email in `ALLOWED_EMAILS`.
+3. Point `BETTER_AUTH_URL` at the API's public URL and
+   `AUTH_TRUSTED_ORIGINS` at the web app's, if they differ from the
+   defaults.
+4. Apply the database migrations (see below), open `/login`, choose
+   **Create account** and pick a password (at least 8 characters).
+
+There is no password reset yet: nabit does not send email.
 
 If you want to use a hosted Postgres instance instead of the local `db`
 container, set `DATABASE_URL` in `.env` and use:
@@ -148,8 +165,6 @@ docker build -f docker/api.Dockerfile -t nabit-api .
 docker build \
   -f docker/web.Dockerfile \
   --build-arg NEXT_PUBLIC_API_URL=http://127.0.0.1:3001/trpc \
-  --build-arg NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co \
-  --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key \
   --build-arg NEXT_PUBLIC_AUTH_REQUIRED=true \
   -t nabit-web .
 ```
@@ -163,13 +178,12 @@ docker build \
 | `DATABASE_URL` | yes | Postgres connection string. Use a direct (non-pooled) URL for migrations; the running API can use either. |
 | `HOST` | no | Bind host, defaults to `0.0.0.0`. |
 | `PORT` | no | Bind port, defaults to `3001`. |
-| `SUPABASE_URL` | yes | Supabase project URL. |
-| `SUPABASE_JWT_AUDIENCE` | no | Defaults to `authenticated`. |
-| `SUPABASE_JWT_ISSUER` | no | Override if your Supabase instance uses a non-standard issuer. |
-| `SUPABASE_JWKS_URL` | no | Override if you host your own JWKS. |
-| `ALLOWED_EMAILS` | when auth required | Comma-separated list of emails permitted to sign in, matched case-insensitively. Enforced on every route (tRPC, REST, WebSocket). Each admitted login becomes a nabit user, and the items they nab are recorded against them. Leave empty to allow any Supabase account. Does not apply to `API_TOKEN` callers, whose submissions go unattributed, or when `AUTH_REQUIRED=false`. |
-| `API_TOKEN` | no | Static bearer token for browser-extension / automation calls that don't carry a Supabase JWT. |
-| `AUTH_REQUIRED` | no | Set to `false` to run single-user: the API skips JWT verification and treats every request as an admin. Only safe behind a trusted network boundary (localhost, VPN, Tailscale). Defaults to `true`. Pair with `NEXT_PUBLIC_AUTH_REQUIRED=false` on the web. |
+| `BETTER_AUTH_SECRET` | when auth required | Signs sessions. Generate with `openssl rand -base64 32`. Without it (or without a database) sign-in is off and `/api/auth/*` answers 503. |
+| `BETTER_AUTH_URL` | recommended | The API's public URL, e.g. `https://api.example.com`. Inferred from each request when unset. |
+| `AUTH_TRUSTED_ORIGINS` | when auth required | Comma-separated origins allowed to sign in from a browser — the web app's, e.g. `https://nabit.example.com`. |
+| `ALLOWED_EMAILS` | when auth required | Comma-separated list of emails, matched case-insensitively. Only these can create an account; with it empty, nobody can. Also enforced on every route (tRPC, REST, WebSocket), so taking an email off the list locks that account out. Each admitted login becomes a nabit user, and the items they nab are recorded against them. Does not apply to `API_TOKEN` callers, whose submissions go unattributed, or when `AUTH_REQUIRED=false`. |
+| `API_TOKEN` | no | Static bearer token for the browser extension, Discord bot and scripts, which don't sign in. |
+| `AUTH_REQUIRED` | no | Set to `false` to run single-user: the API skips session checks and treats every request as an admin. Only safe behind a trusted network boundary (localhost, VPN, Tailscale). Defaults to `true`. Pair with `NEXT_PUBLIC_AUTH_REQUIRED=false` on the web. |
 | `OPENROUTER_API_KEY` | no | Enables the reader's **Ask** panel, which streams answers about the open article from an LLM. Leave unset to keep the feature off — `POST /chat` then returns 503 and the rest of the API is unaffected. |
 | `OPENROUTER_MODEL` | no | OpenRouter model slug used by the Ask panel. Defaults to `anthropic/claude-sonnet-5`. See [openrouter.ai/models](https://openrouter.ai/models). |
 
@@ -181,9 +195,7 @@ variables to `next build` if you're building without Docker).
 
 | Var | Required | Description |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | yes | Public tRPC endpoint, e.g. `https://api.example.com/trpc`. |
-| `NEXT_PUBLIC_SUPABASE_URL` | yes | Supabase project URL. |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Supabase anonymous key. |
+| `NEXT_PUBLIC_API_URL` | yes | Public tRPC endpoint, e.g. `https://api.example.com/trpc`. Sign-in goes to `/api/auth` on the same origin. |
 | `NEXT_PUBLIC_AUTH_REQUIRED` | no | Set to `false` to skip the sign-in gate. Must match the API's `AUTH_REQUIRED`. Defaults to `true`. |
 
 ### Database migrations

@@ -8,7 +8,7 @@ export const EMAIL_NOT_ALLOWED_MESSAGE =
 /**
  * The ALLOWED_EMAILS gate. An empty or missing list lets everyone in.
  *
- * Only provider logins are checked. The API token is the operator's own
+ * Only signed-in sessions are checked. The API token is the operator's own
  * credential and the auth-disabled user is the operator by definition; neither
  * has an email to match, and rejecting them would lock the operator out the
  * moment they invite someone else.
@@ -24,13 +24,26 @@ export function isUserAllowed(
     return true;
   }
 
-  if (user.tokenKind !== "supabase") {
+  if (user.tokenKind !== "session") {
     return true;
   }
 
-  const email = user.email?.trim().toLowerCase();
+  return isEmailListed(user.email, allowedEmails);
+}
+
+/**
+ * Whether `email` is on the list, case-insensitively. Unlike `isUserAllowed`
+ * an empty list matches nothing: this is the strict check sign-up uses, where
+ * no list means nobody may create an account.
+ */
+export function isEmailListed(
+  email: string | null | undefined,
+  allowedEmails: string[] | null,
+) {
+  const normalized = email?.trim().toLowerCase();
   return Boolean(
-    email && allowedEmails.some((entry) => entry.toLowerCase() === email),
+    normalized &&
+      allowedEmails?.some((entry) => entry.toLowerCase() === normalized),
   );
 }
 

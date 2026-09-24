@@ -18,9 +18,10 @@ export function createDatabaseState(): DatabaseState {
     };
   }
 
-  // Disable prepared statements: Supabase's pooler (port 6543) runs pgbouncer
-  // in transaction mode, which doesn't support them. `postgres-js` defaults to
-  // `prepare: true`, so queries fail opaquely against the pooler without this.
+  // Disable prepared statements: a pgbouncer-style pooler in transaction mode
+  // (common in front of hosted Postgres) doesn't support them. `postgres-js`
+  // defaults to `prepare: true`, so queries fail opaquely against such a
+  // pooler without this.
   const client = postgres(url, { prepare: false });
 
   return {

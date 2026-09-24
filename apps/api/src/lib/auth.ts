@@ -1,16 +1,8 @@
 import type { AuthUser, AuthUserRole } from "@repo/trpc";
-import { createRemoteJWKSet, type JWTPayload, jwtVerify } from "jose";
+import type { Auth } from "./better-auth";
 import type { AppEnv } from "./config/env";
 
 const BEARER_PREFIX = "Bearer ";
-
-type SupabaseAccessTokenPayload = JWTPayload & {
-  app_metadata?: {
-    role?: unknown;
-  };
-  email?: unknown;
-  role?: unknown;
-};
 
 export class AuthConfigurationError extends Error {
   constructor(message: string) {
@@ -26,12 +18,12 @@ export class InvalidAuthTokenError extends Error {
   }
 }
 
-export function createAuthHeaderVerifier(env: AppEnv) {
-  const jwksUrl = env.supabase.jwksUrl;
-  const jwtIssuer = env.supabase.jwtIssuer;
-
-  const jwks = jwksUrl ? createRemoteJWKSet(new URL(jwksUrl)) : null;
-
+// `getAuth` is read per request rather than captured once, so the instance
+// can be swapped after the app is built (tests do).
+export function createAuthHeaderVerifier(
+  env: AppEnv,
+  getAuth: () => Auth | null,
+) {
   return async function verifyAuthHeader(authorizationHeader?: string) {
     const token = getBearerToken(authorizationHeader);
 
@@ -49,26 +41,32 @@ export function createAuthHeaderVerifier(env: AppEnv) {
       };
     }
 
-    if (!env.supabase.authEnabled || !jwks || !jwtIssuer) {
+    const auth = getAuth();
+    if (!auth) {
       throw new AuthConfigurationError(
-        "Supabase auth verification is not configured for the API.",
+        "Sign-in is not configured for the API.",
       );
     }
 
-    try {
-      const { payload } = await jwtVerify(token, jwks, {
-        audience: env.supabase.jwtAudience,
-        issuer: jwtIssuer,
-      });
+    const result = await auth.api.getSession({
+      headers: new Headers({ authorization: `${BEARER_PREFIX}${token}` }),
+    });
 
-      return mapSupabaseJwtPayloadToAuthUser(payload);
-    } catch (error) {
-      throw new InvalidAuthTokenError(
-        error instanceof Error
-          ? error.message
-          : "Invalid or expired bearer token.",
-      );
+    if (!result) {
+      throw new InvalidAuthTokenError("Invalid or expired bearer token.");
     }
+
+    return {
+      email: result.user.email,
+      id: result.user.id,
+      // Nothing grants admin to a signed-in account yet; the operator is
+      // admin through the API token or with auth turned off.
+      role: "user",
+      tokenKind: "session",
+      // Filled in by the auth plugin once the email gate has passed — resolving
+      // it needs the database, which token verification has no business touching.
+      userId: null,
+    } satisfies AuthUser;
   };
 }
 
@@ -78,36 +76,4 @@ function getBearerToken(authorizationHeader?: string) {
   }
 
   return authorizationHeader.slice(BEARER_PREFIX.length).trim();
-}
-
-function mapSupabaseJwtPayloadToAuthUser(payload: JWTPayload): AuthUser {
-  const claims = payload as SupabaseAccessTokenPayload;
-
-  if (typeof claims.sub !== "string" || !claims.sub) {
-    throw new InvalidAuthTokenError(
-      "Supabase access token is missing a subject.",
-    );
-  }
-
-  return {
-    email: typeof claims.email === "string" ? claims.email : null,
-    id: claims.sub,
-    role: getAuthUserRole(claims),
-    tokenKind: "supabase",
-    // Filled in by the auth plugin once the email gate has passed — resolving
-    // it needs the database, which token verification has no business touching.
-    userId: null,
-  };
-}
-
-function getAuthUserRole(payload: SupabaseAccessTokenPayload): AuthUserRole {
-  if (payload.app_metadata?.role === "admin") {
-    return "admin";
-  }
-
-  if (payload.role === "admin") {
-    return "admin";
-  }
-
-  return "user";
 }

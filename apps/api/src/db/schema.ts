@@ -25,13 +25,14 @@ const tsvector = customType<{ data: string }>({
 
 // nabit's own notion of a person. Everything that records who did something
 // points here by `id`, never at an auth provider's subject or at an email, so
-// swapping Supabase for another provider only means relinking
-// `user_identities` — none of the tables that reference a user change.
+// swapping auth providers only means relinking `user_identities` — none of
+// the tables that reference a user change. (It already happened once, from
+// Supabase to Better Auth.)
 //
 // `email` is a display copy of whatever the provider last reported. It is
 // deliberately not unique: providers disagree on whether it is verified, and a
-// deleted-and-recreated Supabase account comes back with a new subject but the
-// same address, which must not make that person unable to log in.
+// deleted-and-recreated account comes back with a new subject but the same
+// address, which must not make that person unable to log in.
 export const usersTable = schema.table(
   "users",
   (t) => ({
@@ -52,7 +53,7 @@ export const usersTable = schema.table(
 
 // Maps an auth provider's account onto a nabit user. Created on first login
 // (see modules/users/service.ts). The (provider, subject) pair is the only
-// stable handle a provider gives us — for Supabase that is the JWT `sub`.
+// stable handle a provider gives us — for Better Auth that is its user id.
 export const userIdentitiesTable = schema.table(
   "user_identities",
   (t) => ({
@@ -72,6 +73,99 @@ export const userIdentitiesTable = schema.table(
     primaryKey({ columns: [table.provider, table.subject] }),
     index("idx_user_identities_user_id").on(table.userId),
   ],
+);
+
+// Better Auth's own tables (see lib/better-auth.ts). They hold credentials and
+// sessions only; a signed-in account is linked to a nabit user through
+// `user_identities` with provider "better-auth", so nothing else references
+// them. Property names follow Better Auth's model fields, which the Drizzle
+// adapter reads; ids are the text ids Better Auth generates.
+export const authUsersTable = schema.table("auth_users", (t) => ({
+  id: t.text().primaryKey(),
+  name: t.text().notNull(),
+  email: t.text().notNull().unique(),
+  emailVerified: t.boolean("email_verified").notNull().default(false),
+  image: t.text(),
+  createdAt: t
+    .timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: t
+    .timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+}));
+
+export const authSessionsTable = schema.table(
+  "auth_sessions",
+  (t) => ({
+    id: t.text().primaryKey(),
+    token: t.text().notNull().unique(),
+    userId: t
+      .text("user_id")
+      .notNull()
+      .references(() => authUsersTable.id, { onDelete: "cascade" }),
+    expiresAt: t.timestamp("expires_at", { withTimezone: true }).notNull(),
+    ipAddress: t.text("ip_address"),
+    userAgent: t.text("user_agent"),
+    createdAt: t
+      .timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: t.timestamp("updated_at", { withTimezone: true }).notNull(),
+  }),
+  (table) => [index("idx_auth_sessions_user_id").on(table.userId)],
+);
+
+// One row per way into an account. Email + password is providerId
+// "credential", and the password hash lives here, not on the user.
+export const authAccountsTable = schema.table(
+  "auth_accounts",
+  (t) => ({
+    id: t.text().primaryKey(),
+    accountId: t.text("account_id").notNull(),
+    providerId: t.text("provider_id").notNull(),
+    userId: t
+      .text("user_id")
+      .notNull()
+      .references(() => authUsersTable.id, { onDelete: "cascade" }),
+    accessToken: t.text("access_token"),
+    refreshToken: t.text("refresh_token"),
+    idToken: t.text("id_token"),
+    accessTokenExpiresAt: t.timestamp("access_token_expires_at", {
+      withTimezone: true,
+    }),
+    refreshTokenExpiresAt: t.timestamp("refresh_token_expires_at", {
+      withTimezone: true,
+    }),
+    scope: t.text(),
+    password: t.text(),
+    createdAt: t
+      .timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: t.timestamp("updated_at", { withTimezone: true }).notNull(),
+  }),
+  (table) => [index("idx_auth_accounts_user_id").on(table.userId)],
+);
+
+export const authVerificationsTable = schema.table(
+  "auth_verifications",
+  (t) => ({
+    id: t.text().primaryKey(),
+    identifier: t.text().notNull(),
+    value: t.text().notNull(),
+    expiresAt: t.timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: t
+      .timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: t
+      .timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }),
+  (table) => [index("idx_auth_verifications_identifier").on(table.identifier)],
 );
 
 export const itemsTable = schema.table(

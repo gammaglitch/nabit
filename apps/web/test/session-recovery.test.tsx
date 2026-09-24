@@ -2,19 +2,20 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { TRPCClientError } from "@trpc/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { ErrorScreen } from "@/components/error-screen";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/session-cookie";
 import {
   endRejectedSession,
   isRejectedSessionError,
   resetSessionRecoveryForTests,
 } from "@/lib/auth/session-recovery";
-import { AUTH_COOKIE_NAME } from "@/lib/supabase/auth-cookie";
+import { getAccessToken, setAccessToken } from "@/lib/auth/token";
 
 const { signOutMock } = vi.hoisted(() => ({
-  signOutMock: vi.fn().mockResolvedValue({ error: null }),
+  signOutMock: vi.fn().mockResolvedValue({ data: null, error: null }),
 }));
 
-vi.mock("@/lib/supabase/client", () => ({
-  getBrowserSupabaseClient: () => ({ auth: { signOut: signOutMock } }),
+vi.mock("@/lib/auth/client", () => ({
+  getAuthClient: () => ({ signOut: signOutMock }),
 }));
 
 function trpcError(code: string) {
@@ -52,26 +53,34 @@ describe("endRejectedSession", () => {
     // Seeding the very thing the code under test has to clear; jsdom has no
     // Cookie Store API to seed it through.
     // biome-ignore lint/suspicious/noDocumentCookie: test fixture
-    document.cookie = `${AUTH_COOKIE_NAME}=stale-token; Path=/`;
+    document.cookie = `${SESSION_COOKIE_NAME}=1; Path=/`;
+    setAccessToken("stale-token");
   });
 
-  test("drops the cookie, signs out, and returns to login with the way back", async () => {
+  test("drops the cookie and token, signs out, and returns to login with the way back", async () => {
     const assign = setLocation("/items", "?tag=rust");
+    // The token must still be there when the API is asked to revoke it.
+    signOutMock.mockImplementationOnce(async () => {
+      expect(getAccessToken()).toBe("stale-token");
+      return { data: null, error: null };
+    });
 
     await endRejectedSession();
 
-    expect(document.cookie).not.toContain("stale-token");
-    expect(signOutMock).toHaveBeenCalledWith({ scope: "local" });
+    expect(document.cookie).not.toContain(`${SESSION_COOKIE_NAME}=1`);
+    expect(getAccessToken()).toBeNull();
+    expect(signOutMock).toHaveBeenCalled();
     expect(assign).toHaveBeenCalledWith("/login?next=%2Fitems%3Ftag%3Drust");
   });
 
-  test("clears the session even when Supabase throws", async () => {
+  test("clears the session even when sign-out throws", async () => {
     signOutMock.mockRejectedValueOnce(new Error("network"));
     const assign = setLocation("/items");
 
     await endRejectedSession();
 
-    expect(document.cookie).not.toContain("stale-token");
+    expect(document.cookie).not.toContain(`${SESSION_COOKIE_NAME}=1`);
+    expect(getAccessToken()).toBeNull();
     expect(assign).toHaveBeenCalled();
   });
 

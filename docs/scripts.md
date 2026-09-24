@@ -62,7 +62,7 @@ This file only covers the parts that are not obvious from `package.json`.
   - `tauri:build` is the explicit desktop packaging command.
 - `apps/mobile`
   - `doctor` is an extra Expo diagnostic, not part of the default repo gate.
-- `packages/auth`, `packages/shared`, `packages/trpc`
+- `packages/shared`, `packages/trpc`
   - `dev` runs declaration-focused `tsc --watch`.
 
 For anything else, read the relevant `package.json` directly.

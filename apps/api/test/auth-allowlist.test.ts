@@ -1,28 +1,18 @@
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  test,
-} from "bun:test";
-import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { memoryAdapter } from "better-auth/adapters/memory";
+import { configureAuth } from "../src/lib/better-auth";
 import { buildApp } from "../src/server";
 
 /**
  * ALLOWED_EMAILS used to be checked only by the tRPC middleware, so every REST
- * route accepted any token the Supabase project would sign. These run real
- * JWTs through the auth plugin, verified against a JWKS served locally.
+ * route accepted any signed-in account. These sign in for real against an
+ * in-memory Better Auth and send the session token through the auth plugin.
  *
  * Over a real socket rather than `app.inject`: under Bun, light-my-request
  * never reports a reply sent from an onRequest hook as finished, so Fastify
  * carries on into the route and the test sees a spurious double send.
  */
 describe("ALLOWED_EMAILS on REST routes", () => {
-  const issuer = "https://auth.test/auth/v1";
-  let privateKey: CryptoKey;
-  let jwksServer: ReturnType<typeof Bun.serve>;
   let app: Awaited<ReturnType<typeof buildApp>>;
   let enqueued: Array<{ actor: unknown; input: Record<string, unknown> }>;
 
@@ -30,43 +20,36 @@ describe("ALLOWED_EMAILS on REST routes", () => {
     "ALLOWED_EMAILS",
     "API_TOKEN",
     "AUTH_REQUIRED",
+    "BETTER_AUTH_URL",
     "DATABASE_URL",
-    "SUPABASE_JWKS_URL",
-    "SUPABASE_JWT_ISSUER",
-    "SUPABASE_URL",
   ] as const;
   const previousEnv = Object.fromEntries(
     envKeys.map((key) => [key, process.env[key]]),
   );
 
-  beforeAll(async () => {
-    const pair = await generateKeyPair("RS256");
-    privateKey = pair.privateKey;
-    const jwk = {
-      ...(await exportJWK(pair.publicKey)),
-      alg: "RS256",
-      kid: "k1",
-    };
-    jwksServer = Bun.serve({
-      fetch: () => Response.json({ keys: [jwk] }),
-      port: 0,
-    });
-  });
-
-  afterAll(() => {
-    jwksServer.stop(true);
-  });
-
   beforeEach(async () => {
     process.env.ALLOWED_EMAILS = "Alice@example.com";
     process.env.API_TOKEN = "operator-secret";
     process.env.AUTH_REQUIRED = "true";
+    process.env.BETTER_AUTH_URL = "http://127.0.0.1";
     process.env.DATABASE_URL = "";
-    process.env.SUPABASE_JWKS_URL = `http://localhost:${jwksServer.port}/jwks`;
-    process.env.SUPABASE_JWT_ISSUER = issuer;
-    process.env.SUPABASE_URL = "https://auth.test";
     app = await buildApp();
     await app.listen({ host: "127.0.0.1", port: 0 });
+
+    app.auth = configureAuth({
+      database: memoryAdapter({
+        account: [],
+        session: [],
+        user: [],
+        verification: [],
+      }),
+      // Eve signed up while she was still on the list, then was taken off it.
+      env: {
+        ...app.env,
+        allowedEmails: ["alice@example.com", "eve@example.com"],
+      },
+      secret: "test-secret-that-is-long-enough-for-better-auth",
+    });
 
     enqueued = [];
     // biome-ignore lint/suspicious/noExplicitAny: stubbing a service method
@@ -90,14 +73,17 @@ describe("ALLOWED_EMAILS on REST routes", () => {
     }
   });
 
-  function tokenFor(email: string) {
-    return new SignJWT({ email, role: "authenticated" })
-      .setProtectedHeader({ alg: "RS256", kid: "k1" })
-      .setSubject(`sub-${email}`)
-      .setIssuer(issuer)
-      .setAudience("authenticated")
-      .setExpirationTime("5m")
-      .sign(privateKey);
+  async function tokenFor(email: string) {
+    const response = await request("/api/auth/sign-up/email", {
+      body: JSON.stringify({ email, name: email, password: "long password" }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+    const token = response.headers.get("set-auth-token");
+    if (!token) {
+      throw new Error(`sign-up failed with ${response.status}`);
+    }
+    return token;
   }
 
   function ingestAs(authorization: string) {
@@ -117,7 +103,7 @@ describe("ALLOWED_EMAILS on REST routes", () => {
     });
   }
 
-  test("rejects a valid login whose email is not on the list", async () => {
+  test("rejects a valid session whose email is not on the list", async () => {
     const response = await ingestAs(
       `Bearer ${await tokenFor("eve@example.com")}`,
     );
@@ -134,6 +120,13 @@ describe("ALLOWED_EMAILS on REST routes", () => {
     expect(response.status).toBe(202);
     // No database in this test, so the user cannot be resolved to an id.
     expect(enqueued[0].actor).toEqual({ userId: null });
+  });
+
+  test("rejects a token that is not a session", async () => {
+    const response = await ingestAs("Bearer not-a-session");
+
+    expect(response.status).toBe(401);
+    expect(enqueued).toHaveLength(0);
   });
 
   test("still accepts the operator's API token, unattributed", async () => {

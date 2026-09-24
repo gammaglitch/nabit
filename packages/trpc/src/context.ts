@@ -90,12 +90,12 @@ export type AuthUserRole = "admin" | "user";
 
 export interface AuthUser {
   email: string | null;
-  // The auth provider's subject (Supabase `sub`), or a fixed id for the API
+  // The Better Auth user id for a signed-in session, or a fixed id for the API
   // token and auth-disabled callers. Not stable across providers — record
   // `userId` instead.
   id: string;
   role: AuthUserRole;
-  tokenKind: "api-token" | "local" | "supabase";
+  tokenKind: "api-token" | "local" | "session";
   // nabit's own user id (users.id). Null for callers that are not a person:
   // the shared API token and the synthetic AUTH_REQUIRED=false user.
   userId: number | null;

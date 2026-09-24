@@ -1,9 +1,10 @@
 "use client";
 
 import { isTRPCClientError } from "@trpc/client";
-import { syncBrowserAuthCookie } from "@/lib/supabase/auth-cookie";
-import { getBrowserSupabaseClient } from "@/lib/supabase/client";
+import { getAuthClient } from "./client";
 import { isPublicAuthPath, loginPathWithNext, toNextPath } from "./next-path";
+import { syncSessionCookie } from "./session-cookie";
+import { clearAccessToken } from "./token";
 
 /**
  * The API refused who we are, rather than what we asked for.
@@ -29,8 +30,8 @@ let recovering = false;
  * page.
  *
  * Without this a dead session simply kept failing: the cookie still looked
- * live to the edge proxy, the client still held a token Supabase was happy
- * with, and the only way out was clearing site data by hand.
+ * live to the edge proxy, the client still held the token, and the only way
+ * out was clearing site data by hand.
  */
 export async function endRejectedSession(): Promise<void> {
   if (typeof window === "undefined" || recovering) {
@@ -38,15 +39,19 @@ export async function endRejectedSession(): Promise<void> {
   }
   recovering = true;
 
-  // The same write the session hook makes when Supabase reports no session.
-  syncBrowserAuthCookie(null);
+  // The same write the session hook makes when the API reports no session.
+  syncSessionCookie(null);
 
   try {
-    await getBrowserSupabaseClient().auth.signOut({ scope: "local" });
+    // Revoke it on the API too: a session refused for its email (FORBIDDEN)
+    // is still valid there. Sent before the token is dropped, since the
+    // token is how the API knows which session to end.
+    await getAuthClient().signOut();
   } catch {
-    // Unconfigured, or refusing to talk to us — the cookie is already gone,
-    // and the redirect below matters more than a clean sign-out.
+    // Already dead, or the API is unreachable. The redirect below matters
+    // more than a clean sign-out.
   }
+  clearAccessToken();
 
   const { pathname, search } = window.location;
   if (isPublicAuthPath(pathname)) {

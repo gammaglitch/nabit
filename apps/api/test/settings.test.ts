@@ -15,6 +15,7 @@ function makeEnv(overrides: Partial<AppEnv["openrouter"]> = {}): AppEnv {
     apiToken: null,
     assetStoragePath: "./data/assets",
     authRequired: false,
+    betterAuth: { secret: null, trustedOrigins: [], url: null },
     headlessBrowser: { captureUrl: null, enabled: false },
     host: "127.0.0.1",
     openrouter: {
@@ -24,13 +25,6 @@ function makeEnv(overrides: Partial<AppEnv["openrouter"]> = {}): AppEnv {
       ...overrides,
     },
     port: 3001,
-    supabase: {
-      authEnabled: false,
-      jwtAudience: ["authenticated"],
-      jwtIssuer: null,
-      jwksUrl: null,
-      url: null,
-    },
     websocketsEnabled: false,
   };
 }

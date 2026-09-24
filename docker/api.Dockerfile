@@ -18,14 +18,12 @@ COPY apps/api/package.json apps/api/
 COPY packages/ingestors/package.json packages/ingestors/
 COPY packages/shared/package.json packages/shared/
 COPY packages/trpc/package.json packages/trpc/
-COPY packages/auth/package.json packages/auth/
 
 RUN bun install
 
 COPY packages/ingestors ./packages/ingestors
 COPY packages/shared ./packages/shared
 COPY packages/trpc ./packages/trpc
-COPY packages/auth ./packages/auth
 COPY apps/api ./apps/api
 
 WORKDIR /app/apps/api

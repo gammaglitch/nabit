@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getBrowserSupabaseAccessToken } from "@/lib/supabase/client";
+import { getAccessToken } from "@/lib/auth/token";
 import { getApiOrigin } from "@/lib/trpc/client";
 
 // Mirrors the API's ExportArticleSummary. Frontend apps must not import from
@@ -28,7 +28,7 @@ interface ListResult {
 const SINCE_STORAGE_KEY = "nabit-debug-sync-since";
 
 async function authHeaders(): Promise<Record<string, string>> {
-  const token = await getBrowserSupabaseAccessToken();
+  const token = getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 

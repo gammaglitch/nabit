@@ -3,7 +3,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getBrowserSupabaseAccessToken } from "@/lib/supabase/client";
+import { getAccessToken } from "@/lib/auth/token";
 import { getApiOrigin } from "@/lib/trpc/client";
 import { CompactMarkdown } from "./CompactMarkdown";
 
@@ -51,7 +51,7 @@ export function ArticleChat({ itemId }: { itemId: number }) {
         // Resolved per request rather than once at mount, so a token that
         // refreshes mid-session doesn't strand the panel on a stale one.
         prepareSendMessagesRequest: async ({ messages }) => {
-          const accessToken = await getBrowserSupabaseAccessToken();
+          const accessToken = getAccessToken();
           const headers: Record<string, string> = {};
           if (accessToken) {
             headers.authorization = `Bearer ${accessToken}`;

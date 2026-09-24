@@ -4,7 +4,7 @@ import { UserService } from "../src/modules/users/service";
 
 const alice = {
   email: "alice@example.com",
-  provider: "supabase",
+  provider: "better-auth",
   subject: "sub-alice",
 };
 

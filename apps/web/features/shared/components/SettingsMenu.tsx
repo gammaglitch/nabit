@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/features/shared/components/Icon";
 import { type Theme, useTheme } from "@/features/shared/hooks/useTheme";
+import { getAuthClient } from "@/lib/auth/client";
+import { authRequired } from "@/lib/auth/required";
+import { syncSessionCookie } from "@/lib/auth/session-cookie";
+import { clearAccessToken } from "@/lib/auth/token";
 import { trpc } from "@/lib/trpc/react";
 
 const THEMES: Array<{ id: Theme; title: string; sub: string }> = [
@@ -226,9 +230,55 @@ export function SettingsMenu() {
               What the models have cost →
             </a>
           </div>
+
+          {authRequired() && (
+            <div style={{ borderTop: "1px solid var(--rule)", padding: 14 }}>
+              <SignOutButton />
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function SignOutButton() {
+  const [busy, setBusy] = useState(false);
+
+  const signOut = async () => {
+    setBusy(true);
+    try {
+      // Revokes the session on the API, so the token is dead even if a copy
+      // of it survives somewhere.
+      await getAuthClient().signOut();
+    } finally {
+      clearAccessToken();
+      syncSessionCookie(null);
+      // A full load rather than router.replace, so nothing cached from this
+      // account lingers in memory.
+      window.location.assign("/login");
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => void signOut()}
+      style={{
+        fontFamily: "var(--mono-font)",
+        fontSize: 11,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color: "var(--ink-2)",
+        border: "1px solid var(--rule)",
+        background: "transparent",
+        padding: "7px 12px",
+        opacity: busy ? 0.4 : 1,
+      }}
+    >
+      {busy ? "Signing out…" : "Sign out"}
+    </button>
   );
 }
 

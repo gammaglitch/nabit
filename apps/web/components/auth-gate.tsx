@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
-import { useBrowserSupabaseSession } from "@/hooks/use-browser-supabase-session";
+import { useSession } from "@/hooks/use-session";
 import {
   isPublicAuthPath,
   loginPathWithNext,
@@ -24,8 +24,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 }
 
 function GateEnforced({ children }: { children: ReactNode }) {
-  const { session, supabaseClient, supabaseError } =
-    useBrowserSupabaseSession();
+  const { isPending, session } = useSession();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -33,7 +32,8 @@ function GateEnforced({ children }: { children: ReactNode }) {
   const isPublicPath = isPathReady && isPublicAuthPath(pathname);
 
   useEffect(() => {
-    if (!isPathReady || supabaseError || !supabaseClient) {
+    // Until the API has answered, no session means "don't know yet".
+    if (!isPathReady || isPending) {
       return;
     }
 
@@ -47,33 +47,20 @@ function GateEnforced({ children }: { children: ReactNode }) {
     }
 
     if (session && pathname === "/login") {
-      // The other half of the proxy's bounce: it sends an expired-but-
-      // refreshable session here, and the client has the real one. Without
-      // this the destination is dropped on the way back out.
+      // Signed in already (another tab, or a session cookie that went
+      // missing): leave /login for the destination instead of asking again.
       const next = safeNextPath(
         new URLSearchParams(window.location.search).get(NEXT_PARAM),
       );
       router.replace(next ?? "/");
     }
-  }, [
-    isPathReady,
-    session,
-    isPublicPath,
-    pathname,
-    router,
-    supabaseClient,
-    supabaseError,
-  ]);
+  }, [isPathReady, isPending, session, isPublicPath, pathname, router]);
 
   if (!isPathReady) {
     return null;
   }
 
   if (isPublicPath) {
-    return children;
-  }
-
-  if (supabaseError) {
     return children;
   }
 

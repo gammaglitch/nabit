@@ -104,7 +104,6 @@ Read:
 
 Use for:
 
-- `@repo/auth`
 - `@repo/shared`
 - `@repo/trpc`
 - package boundary questions

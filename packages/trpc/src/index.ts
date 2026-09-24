@@ -10,6 +10,7 @@ export {
   authedProcedure,
   EMAIL_NOT_ALLOWED_MESSAGE,
   isAuthed,
+  isEmailListed,
   isUserAllowed,
 } from "./lib/trpc/middlewares";
 export type { AppRouter } from "./routers/_app";

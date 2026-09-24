@@ -3,6 +3,13 @@ export interface AppEnv {
   apiToken: string | null;
   assetStoragePath: string;
   authRequired: boolean;
+  betterAuth: {
+    // Signs session tokens. Without it (or without a database) sign-in is off
+    // and the /api/auth routes answer 503.
+    secret: string | null;
+    trustedOrigins: string[];
+    url: string | null;
+  };
   headlessBrowser: {
     captureUrl: string | null;
     enabled: boolean;
@@ -14,13 +21,6 @@ export interface AppEnv {
     model: string;
   };
   port: number;
-  supabase: {
-    authEnabled: boolean;
-    jwtAudience: string[];
-    jwtIssuer: string | null;
-    jwksUrl: string | null;
-    url: string | null;
-  };
   websocketsEnabled: boolean;
 }
 
@@ -36,12 +36,6 @@ export function getAppEnv(): AppEnv {
 
   const openrouterApiKey = process.env.OPENROUTER_API_KEY?.trim() || null;
 
-  const supabaseUrl = parseOptionalUrl(process.env.SUPABASE_URL);
-  const jwtIssuer =
-    process.env.SUPABASE_JWT_ISSUER ?? deriveSupabaseAuthUrl(supabaseUrl);
-  const jwksUrl =
-    process.env.SUPABASE_JWKS_URL ?? deriveSupabaseJwksUrl(supabaseUrl);
-
   return {
     allowedEmails: parseList(process.env.ALLOWED_EMAILS),
     apiToken: process.env.API_TOKEN?.trim() || null,
@@ -51,6 +45,16 @@ export function getAppEnv(): AppEnv {
     // ALLOWED_EMAILS is ignored. Meant for private self-hosted deployments
     // that already gate the network path (local network, VPN, etc.).
     authRequired: process.env.AUTH_REQUIRED !== "false",
+    betterAuth: {
+      secret: process.env.BETTER_AUTH_SECRET?.trim() || null,
+      // Origins allowed to call the auth routes from a browser — the web app.
+      // Better Auth rejects sign-in from any other origin.
+      trustedOrigins: (parseList(process.env.AUTH_TRUSTED_ORIGINS) ?? []).map(
+        (origin) => new URL(origin).origin,
+      ),
+      // The API's public origin, used to build the auth endpoints' URLs.
+      url: parseOptionalUrl(process.env.BETTER_AUTH_URL),
+    },
     headlessBrowser: {
       captureUrl: headlessBrowserCaptureUrl,
       enabled: Boolean(headlessBrowserCaptureUrl),
@@ -64,15 +68,6 @@ export function getAppEnv(): AppEnv {
       model: process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL,
     },
     port: Number(process.env.PORT ?? 3001),
-    supabase: {
-      authEnabled: Boolean(supabaseUrl),
-      jwtAudience: parseList(process.env.SUPABASE_JWT_AUDIENCE) ?? [
-        "authenticated",
-      ],
-      jwtIssuer,
-      jwksUrl,
-      url: supabaseUrl,
-    },
     websocketsEnabled: parseBoolean(process.env.WEBSOCKETS_ENABLED),
   };
 }
@@ -106,20 +101,4 @@ function parseOptionalAbsoluteUrl(value: string | undefined) {
   }
 
   return new URL(value).toString();
-}
-
-function deriveSupabaseAuthUrl(supabaseUrl: string | null) {
-  if (!supabaseUrl) {
-    return null;
-  }
-
-  return `${supabaseUrl}/auth/v1`;
-}
-
-function deriveSupabaseJwksUrl(supabaseUrl: string | null) {
-  if (!supabaseUrl) {
-    return null;
-  }
-
-  return `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
 }
