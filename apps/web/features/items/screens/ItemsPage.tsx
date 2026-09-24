@@ -809,6 +809,7 @@ export default function ItemsPage() {
 
       <QueueStatus
         hidden={captureOpen}
+        onOpenAutoTag={() => setAutoTagOpen(true)}
         onOpenCapture={() => setCaptureOpen(true)}
       />
     </div>

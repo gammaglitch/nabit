@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { QueueStatus } from "@/features/items/components/QueueStatus";
 
 type Run = {
+  errorMessage: string | null;
   failedCount: number;
   id: number;
   itemsScored: number;
@@ -11,7 +12,8 @@ type Run = {
   status: string;
 };
 
-const { runState } = vi.hoisted(() => ({
+const { errorState, runState } = vi.hoisted(() => ({
+  errorState: { current: null as { message: string } | null },
   runState: { current: null as Run | null },
 }));
 
@@ -27,15 +29,24 @@ vi.mock("@/lib/trpc/react", () => ({
     },
     tagging: {
       latestRun: {
-        useQuery: () => ({ data: { run: runState.current }, error: null }),
+        useQuery: () => ({
+          data: errorState.current ? undefined : { run: runState.current },
+          error: errorState.current,
+        }),
       },
     },
     useUtils: () => ({ ingest: { list: { invalidate: vi.fn() } } }),
   },
 }));
 
+function renderQueue(onOpenAutoTag = vi.fn()) {
+  render(<QueueStatus onOpenAutoTag={onOpenAutoTag} onOpenCapture={vi.fn()} />);
+  return onOpenAutoTag;
+}
+
 function scoringRun(overrides: Partial<Run> = {}): Run {
   return {
+    errorMessage: null,
     failedCount: 0,
     id: 1,
     itemsScored: 120,
@@ -48,11 +59,12 @@ function scoringRun(overrides: Partial<Run> = {}): Run {
 
 describe("QueueStatus and a bulk tagging pass", () => {
   beforeEach(() => {
+    errorState.current = null;
     runState.current = null;
   });
 
   test("reads as idle when nothing is running", () => {
-    render(<QueueStatus onOpenCapture={vi.fn()} />);
+    renderQueue();
 
     expect(
       screen.getByRole("button", { name: /queue idle/i }),
@@ -61,7 +73,7 @@ describe("QueueStatus and a bulk tagging pass", () => {
 
   test("shows a scoring pass in the badge and the panel", () => {
     runState.current = scoringRun();
-    render(<QueueStatus onOpenCapture={vi.fn()} />);
+    renderQueue();
 
     // The badge alone answers "is it still going", without opening anything.
     const badge = screen.getByRole("button", { name: /tagging 120\/354/i });
@@ -81,7 +93,7 @@ describe("QueueStatus and a bulk tagging pass", () => {
 
   test("says a pass is still waiting for the worker", () => {
     runState.current = scoringRun({ itemsScored: 0, status: "pending" });
-    render(<QueueStatus onOpenCapture={vi.fn()} />);
+    renderQueue();
 
     fireEvent.click(screen.getByRole("button", { name: /tagging 0\/354/i }));
     expect(screen.getByText(/waiting for the worker/i)).toBeInTheDocument();
@@ -89,20 +101,58 @@ describe("QueueStatus and a bulk tagging pass", () => {
 
   test("counts what the pass could not score", () => {
     runState.current = scoringRun({ failedCount: 3 });
-    render(<QueueStatus onOpenCapture={vi.fn()} />);
+    renderQueue();
 
     fireEvent.click(screen.getByRole("button", { name: /tagging/i }));
     expect(screen.getByText(/3 could not be scored/)).toBeInTheDocument();
   });
 
-  test("drops out of the queue once the pass is waiting on the user", () => {
-    // Scored is finished work: it belongs in the modal that asks about it, not
-    // in the queue of things still running.
-    runState.current = scoringRun({ status: "scored" });
-    render(<QueueStatus onOpenCapture={vi.fn()} />);
+  test("keeps a finished pass in the queue until it is approved", () => {
+    // The state that most needs saying: it has spent the money and will do
+    // nothing further on its own. Hiding it here stranded 554 real tags.
+    runState.current = scoringRun({
+      itemsScored: 354,
+      matches: [
+        { count: 166, tagId: 1, tagName: "dev" },
+        { count: 43, tagId: 2, tagName: "llm-coding" },
+      ],
+      status: "scored",
+    });
+    renderQueue();
 
-    expect(
-      screen.getByRole("button", { name: /queue idle/i }),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /209 tags ready/i }));
+    expect(screen.getByText("Tags ready to apply")).toBeInTheDocument();
+  });
+
+  test("a finished pass opens the approval modal when clicked", () => {
+    runState.current = scoringRun({ itemsScored: 354, status: "scored" });
+    const onOpenAutoTag = renderQueue();
+
+    fireEvent.click(screen.getByRole("button", { name: /66 tags ready/i }));
+    fireEvent.click(screen.getByRole("button", { name: /click to review/i }));
+
+    expect(onOpenAutoTag).toHaveBeenCalledTimes(1);
+  });
+
+  test("shows a pass that gave up, with why", () => {
+    runState.current = scoringRun({
+      errorMessage: "Auto-tagging failed: HTTP 403: blocked",
+      status: "failed",
+    });
+    renderQueue();
+
+    fireEvent.click(screen.getByRole("button", { name: /tagging failed/i }));
+    expect(screen.getByText(/HTTP 403: blocked/)).toBeInTheDocument();
+    // Nothing to approve, so the row is not a way into the modal.
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  test("says so when the tagging status cannot be read", () => {
+    runState.current = null;
+    errorState.current = { message: "Find failed: nope" };
+    renderQueue();
+
+    fireEvent.click(screen.getByRole("button", { name: /queue idle/i }));
+    expect(screen.getByText(/TAGGING STATUS UNAVAILABLE/i)).toBeInTheDocument();
   });
 });
