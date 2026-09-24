@@ -12,6 +12,8 @@ import type { AppEnv } from "../../lib/config/env";
 import { renderArticleDocument } from "../export/markdown";
 import type { ExportService } from "../export/service";
 import type { SettingsService } from "../settings/service";
+import { readOpenRouterUsage, usageAccounting } from "../usage/openrouter";
+import type { UsageService } from "../usage/service";
 import { DigestNotConfiguredError, type DigestStatus } from "./dto";
 import { formatPeriodLabel, resolvePeriod } from "./periods";
 import {
@@ -130,6 +132,7 @@ export class DigestService {
     private readonly env: AppEnv,
     private readonly exportService: ExportService,
     private readonly settingsService: SettingsService,
+    private readonly usage?: UsageService,
   ) {}
 
   /**
@@ -460,7 +463,7 @@ export class DigestService {
           article,
           itemId: row.id,
           maxContextChars: settings.maxContextChars,
-          model: openrouter(settings.summaryModel),
+          model: openrouter(settings.summaryModel, usageAccounting),
           modelName: settings.summaryModel,
         });
         summaries.push({
@@ -491,11 +494,18 @@ export class DigestService {
       omittedCount,
       periodLabel,
     });
+    const startedAt = Date.now();
     const result = await generateText({
       abortSignal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
-      model: openrouter(settings.digestModel),
+      model: openrouter(settings.digestModel, usageAccounting),
       prompt: prompt.prompt,
       system: prompt.system,
+    });
+    this.usage?.record({
+      ...readOpenRouterUsage(result.providerMetadata, result.usage),
+      durationMs: Date.now() - startedAt,
+      feature: "digest",
+      model: settings.digestModel,
     });
 
     return {
@@ -550,12 +560,20 @@ export class DigestService {
       return existing.summaryText;
     }
 
+    const startedAt = Date.now();
     try {
       const result = await generateText({
         abortSignal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
         model: input.model,
         prompt: built.prompt,
         system: built.system,
+      });
+      this.usage?.record({
+        ...readOpenRouterUsage(result.providerMetadata, result.usage),
+        durationMs: Date.now() - startedAt,
+        feature: "digest-summary",
+        itemId: input.itemId,
+        model: input.modelName,
       });
       const summaryText = result.text.trim();
       if (!summaryText) {
@@ -593,6 +611,16 @@ export class DigestService {
       return summaryText;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
+      // A failed summary still spent a request, and a run that fails on every
+      // article should be visible as cost rather than as silence.
+      this.usage?.record({
+        durationMs: Date.now() - startedAt,
+        errorMessage: message,
+        feature: "digest-summary",
+        itemId: input.itemId,
+        model: input.modelName,
+        status: "error",
+      });
       await db
         .insert(articleSummariesTable)
         .values({

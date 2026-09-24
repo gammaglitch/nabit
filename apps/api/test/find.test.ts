@@ -1,12 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "../src/lib/config/env";
+import { JEV_MODEL, JEV_STATE_CHARS, JevClient } from "../src/lib/jev";
 import {
   batchPassages,
-  FIND_MODEL,
   FindService,
   MAX_SCREEN_BATCHES,
-  readChoice,
-  SCREEN_BATCH_CHARS,
   SCREEN_BATCH_PASSAGES,
   splitSentences,
 } from "../src/modules/find/service";
@@ -102,7 +100,7 @@ describe("batchPassages", () => {
       1,
     ]);
 
-    const big = "y".repeat(SCREEN_BATCH_CHARS / 2 + 1);
+    const big = "y".repeat(JEV_STATE_CHARS / 2 + 1);
     expect(batchPassages([big, big, big])).toEqual([[0], [1], [2]]);
   });
 });
@@ -121,19 +119,26 @@ describe("splitSentences", () => {
   });
 });
 
-describe("readChoice", () => {
-  test("rejects an answer outside the options it was asked", () => {
+describe("JevClient answers", () => {
+  const jev = new JevClient("test-key");
+
+  test("rejects a choice outside the options it was asked", () => {
     expect(() =>
-      readChoice(choice("maybe", { maybe: 1 }), ["match", "irrelevant"]),
+      jev.readChoice(choice("maybe", { maybe: 1 }), ["match", "irrelevant"]),
     ).toThrow("an option it was not offered");
-    expect(() => readChoice(undefined, ["match"])).toThrow();
+    expect(() => jev.readChoice(undefined, ["match"])).toThrow();
+  });
+
+  test("reads a yes/no answer as the probability of true", () => {
+    expect(jev.readNoul({ noul: 0.91, type: "noul" })).toBe(0.91);
+    expect(() => jev.readNoul({ noul: true })).toThrow();
   });
 });
 
 describe("FindService.search", () => {
   test("screens every passage, ranks matches, and narrows each to a sentence", async () => {
     const jev = fakeJev();
-    const service = new FindService(makeEnv(), jev.fetcher);
+    const service = new FindService(makeEnv(), undefined, jev.fetcher);
 
     const result = await service.search({
       passages: [
@@ -163,7 +168,7 @@ describe("FindService.search", () => {
     expect(new Headers(screen?.init.headers).get("Authorization")).toBe(
       "Bearer test-key",
     );
-    expect(screen?.body.model).toBe(FIND_MODEL);
+    expect(screen?.body.model).toBe(JEV_MODEL);
     // Each passage rides in its own question; the empty one is never sent.
     expect(screen?.body.state).toEqual({ query: "how long does it last" });
     expect(Object.keys(screen?.body.questions ?? {})).toEqual([
@@ -185,7 +190,7 @@ describe("FindService.search", () => {
 
   test("searches only the start of an article too long to screen", async () => {
     const jev = fakeJev();
-    const service = new FindService(makeEnv(), jev.fetcher);
+    const service = new FindService(makeEnv(), undefined, jev.fetcher);
     const passages = Array.from(
       { length: (MAX_SCREEN_BATCHES + 1) * SCREEN_BATCH_PASSAGES },
       (_, index) => `Passage ${index}.`,
@@ -200,7 +205,7 @@ describe("FindService.search", () => {
   test("retries once when the endpoint fails", async () => {
     const jev = fakeJev();
     let calls = 0;
-    const service = new FindService(makeEnv(), async (url, init) => {
+    const service = new FindService(makeEnv(), undefined, async (url, init) => {
       calls++;
       return calls === 1 ? json({}, 503) : jev.fetcher(url, init);
     });
@@ -215,7 +220,7 @@ describe("FindService.search", () => {
   });
 
   test("passes OpenRouter's own error message through", async () => {
-    const service = new FindService(makeEnv(), async () =>
+    const service = new FindService(makeEnv(), undefined, async () =>
       json({ error: { code: 402, message: "Insufficient credits" } }, 402),
     );
 
@@ -226,7 +231,7 @@ describe("FindService.search", () => {
 
   test("keeps a match when narrowing it to a sentence fails", async () => {
     const jev = fakeJev();
-    const service = new FindService(makeEnv(), async (url, init) => {
+    const service = new FindService(makeEnv(), undefined, async (url, init) => {
       const body = JSON.parse(String(init.body)) as DecisionsBody;
       return "e0" in body.questions
         ? json({ answers: {}, model: "m" })
@@ -244,7 +249,11 @@ describe("FindService.search", () => {
   });
 
   test("refuses without an API key", async () => {
-    const service = new FindService(makeEnv(null), fakeJev().fetcher);
+    const service = new FindService(
+      makeEnv(null),
+      undefined,
+      fakeJev().fetcher,
+    );
 
     await expect(
       service.search({ passages: ["text"], query: "q" }),

@@ -6,6 +6,8 @@ import { DigestService } from "./modules/digest/service";
 import { ExportService } from "./modules/export/service";
 import { IngestService } from "./modules/ingest/service";
 import { SettingsService } from "./modules/settings/service";
+import { TagRunService } from "./modules/tagging/run-service";
+import { UsageService } from "./modules/usage/service";
 
 const workerId = process.env.WORKER_ID ?? `ingest-worker-${process.pid}`;
 const pollIntervalMs = Number(process.env.INGEST_WORKER_POLL_MS ?? 3000);
@@ -20,6 +22,12 @@ const digestPollMs = Number(process.env.DIGEST_POLL_MS ?? 15_000);
 // Generous next to the ingest threshold: a legitimate digest run is minutes of
 // model calls, and the heartbeat is what actually proves it is alive.
 const stuckDigestMs = Number(process.env.DIGEST_STUCK_MS ?? 30 * 60_000);
+// A bulk tagging pass is queued by hand and then wants to start promptly;
+// polling this often costs one cheap query.
+const tagRunPollMs = Number(process.env.TAG_RUN_POLL_MS ?? 5_000);
+// Same reasoning as the digest: a legitimate pass is minutes of model calls,
+// and the heartbeat is what proves it is still alive.
+const stuckTagRunMs = Number(process.env.TAG_RUN_STUCK_MS ?? 30 * 60_000);
 let shuttingDown = false;
 
 process.on("SIGINT", () => {
@@ -52,17 +60,23 @@ async function main() {
     onPageIngested: (input) => crawls.expand(input),
   });
   const settings = new SettingsService(database, env);
+  // The worker spends as much as the API does: every call it makes lands in
+  // the same ledger.
+  const usage = new UsageService(database);
+  const tagRuns = new TagRunService(database, env, usage);
   const digests = new DigestService(
     database,
     env,
     new ExportService(database),
     settings,
+    usage,
   );
   console.info(
     {
       digestIntervalMs,
       digestPollMs,
       pollIntervalMs,
+      tagRunPollMs,
       reapIntervalMs,
       stuckJobMs,
       workerId,
@@ -179,7 +193,42 @@ async function main() {
     }
   }
 
-  await Promise.all([ingestLoop(), digestLoop()]);
+  /**
+   * A third loop, for the same reason the digest has its own: a bulk tagging
+   * pass is one model call per item and runs for minutes. Queueing captures
+   * behind it would make nabbing a URL appear to hang.
+   */
+  async function tagRunLoop() {
+    let lastReapAt = 0;
+
+    while (!shuttingDown) {
+      if (Date.now() - lastReapAt > reapIntervalMs) {
+        try {
+          const reaped = await tagRuns.reapStuckRuns(stuckTagRunMs);
+          if (reaped.reaped > 0) {
+            console.info({ ...reaped, workerId }, "reaped stuck tag runs");
+          }
+        } catch (error) {
+          console.error(error, "tag run reaper failed");
+        }
+        lastReapAt = Date.now();
+      }
+
+      try {
+        const result = await tagRuns.processNextRun(workerId);
+        if (result.processed) {
+          console.info({ workerId }, "processed tag run");
+          continue;
+        }
+      } catch (error) {
+        console.error(error, "tag run failed");
+      }
+
+      await sleep(tagRunPollMs);
+    }
+  }
+
+  await Promise.all([ingestLoop(), digestLoop(), tagRunLoop()]);
 
   console.info({ workerId }, "ingest worker stopped");
 }

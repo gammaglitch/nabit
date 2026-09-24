@@ -10,7 +10,9 @@ import { HealthService } from "../modules/health/service";
 import { HelloService } from "../modules/hello/service";
 import { IngestService } from "../modules/ingest/service";
 import { SettingsService } from "../modules/settings/service";
+import { TaggingService } from "../modules/tagging/service";
 import { TagService } from "../modules/tags/service";
+import { UsageService } from "../modules/usage/service";
 import { UserService } from "../modules/users/service";
 import type { AppEnv } from "./config/env";
 import type { AppEventBus } from "./event-bus";
@@ -26,7 +28,9 @@ export interface ServiceContainer extends TrpcServices {
   hello: HelloService;
   ingest: IngestService;
   settings: SettingsService;
+  tagging: TaggingService;
   tags: TagService;
+  usage: UsageService;
   users: UserService;
 }
 
@@ -44,6 +48,9 @@ export function makeServices(options: MakeServicesOptions): ServiceContainer {
   );
   const exportService = new ExportService(options.database);
   const settings = new SettingsService(options.database, options.env);
+  // Built before anything that spends money: each of those reports what it
+  // spent through this one.
+  const usage = new UsageService(options.database);
   const ingest = new IngestService(options.database, options.env, assets);
 
   // Built after ingest because a crawl queues its pages through it, and wired
@@ -57,16 +64,17 @@ export function makeServices(options: MakeServicesOptions): ServiceContainer {
 
   return {
     assets,
-    chat: new ChatService(exportService, settings, options.env),
+    chat: new ChatService(exportService, settings, options.env, usage),
     crawl,
     digest: new DigestService(
       options.database,
       options.env,
       exportService,
       settings,
+      usage,
     ),
     export: exportService,
-    find: new FindService(options.env),
+    find: new FindService(options.env, usage),
     health: new HealthService({
       database: options.database,
       env: options.env,
@@ -74,7 +82,14 @@ export function makeServices(options: MakeServicesOptions): ServiceContainer {
     hello,
     ingest,
     settings,
+    tagging: new TaggingService(
+      options.database,
+      exportService,
+      options.env,
+      usage,
+    ),
     tags: new TagService(options.database),
+    usage,
     users: new UserService(options.database),
   };
 }

@@ -9,6 +9,6 @@ export const findRouter = router({
     .input(FindSearchInput)
     .output(FindSearchOutput)
     .mutation(async ({ ctx, input }) => {
-      return ctx.services.find.search(input);
+      return ctx.services.find.search(input, { userId: ctx.user.userId });
     }),
 });

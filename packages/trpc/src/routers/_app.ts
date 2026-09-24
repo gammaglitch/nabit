@@ -6,7 +6,9 @@ import { healthRouter } from "../modules/health/router";
 import { helloRouter } from "../modules/hello/router";
 import { ingestRouter } from "../modules/ingest/router";
 import { settingsRouter } from "../modules/settings/router";
+import { taggingRouter } from "../modules/tagging/router";
 import { tagsRouter } from "../modules/tags/router";
+import { usageRouter } from "../modules/usage/router";
 
 export const appRouter = router({
   crawl: crawlRouter,
@@ -16,7 +18,9 @@ export const appRouter = router({
   hello: helloRouter,
   ingest: ingestRouter,
   settings: settingsRouter,
+  tagging: taggingRouter,
   tags: tagsRouter,
+  usage: usageRouter,
 });
 
 export type AppRouter = typeof appRouter;

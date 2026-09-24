@@ -1,0 +1,2 @@
+ALTER TABLE "nabit"."tag_runs" ADD COLUMN "failed_count" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "nabit"."tag_runs" ADD COLUMN "failed_item_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;

@@ -197,6 +197,40 @@ export function SettingsMenu() {
             <ChatSettingsSection enabled={open} />
           </div>
 
+          {/* Tags live on their own page now: names, descriptions and what
+              each one holds do not fit a popover. */}
+          <div style={{ borderTop: "1px solid var(--rule)", padding: 14 }}>
+            <div style={labelStyle}>Tags</div>
+            <a
+              href="/tags"
+              style={{
+                color: "var(--ink-2)",
+                fontFamily: "var(--mono-font)",
+                fontSize: 11,
+                textDecoration: "underline",
+                textUnderlineOffset: 3,
+              }}
+            >
+              Manage tags and their descriptions →
+            </a>
+          </div>
+
+          <div style={{ borderTop: "1px solid var(--rule)", padding: 14 }}>
+            <div style={labelStyle}>Spend</div>
+            <a
+              href="/usage"
+              style={{
+                color: "var(--ink-2)",
+                fontFamily: "var(--mono-font)",
+                fontSize: 11,
+                textDecoration: "underline",
+                textUnderlineOffset: 3,
+              }}
+            >
+              What the models have cost →
+            </a>
+          </div>
+
           {authRequired() && (
             <div style={{ borderTop: "1px solid var(--rule)", padding: 14 }}>
               <SignOutButton />

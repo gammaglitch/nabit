@@ -57,6 +57,15 @@ import type {
   UpdateChatSettingsOutputDTO,
 } from "./modules/settings/dto";
 import type {
+  LatestTagRunOutputDTO,
+  StartTagRunInputDTO,
+  SuggestTagsInputDTO,
+  SuggestTagsOutputDTO,
+  TagRunEstimateOutputDTO,
+  TagRunIdInputDTO,
+  TagRunOutputDTO,
+} from "./modules/tagging/dto";
+import type {
   AddTagToItemInputDTO,
   AddTagToItemOutputDTO,
   AddTagToItemsInputDTO,
@@ -68,7 +77,14 @@ import type {
   RemoveTagFromItemInputDTO,
   RemoveTagFromItemOutputDTO,
   TagListOutputDTO,
+  UpdateTagInputDTO,
+  UpdateTagOutputDTO,
 } from "./modules/tags/dto";
+
+import type {
+  UsageSummaryInputDTO,
+  UsageSummaryOutputDTO,
+} from "./modules/usage/dto";
 
 export type AuthUserRole = "admin" | "user";
 
@@ -125,6 +141,7 @@ export interface TrpcServices {
   find: {
     search(
       input: FindSearchInputDTO,
+      actor: RequestActor,
     ): FindSearchOutputDTO | Promise<FindSearchOutputDTO>;
   };
   health: {
@@ -188,8 +205,37 @@ export interface TrpcServices {
       input: UpdateChatSettingsInputDTO,
     ): UpdateChatSettingsOutputDTO | Promise<UpdateChatSettingsOutputDTO>;
   };
+  tagging: {
+    suggest(
+      input: SuggestTagsInputDTO,
+      actor: RequestActor,
+    ): SuggestTagsOutputDTO | Promise<SuggestTagsOutputDTO>;
+    estimateRun(
+      input: StartTagRunInputDTO,
+    ): TagRunEstimateOutputDTO | Promise<TagRunEstimateOutputDTO>;
+    startRun(
+      input: StartTagRunInputDTO,
+      actor: RequestActor,
+    ): TagRunOutputDTO | Promise<TagRunOutputDTO>;
+    getRun(input: TagRunIdInputDTO): TagRunOutputDTO | Promise<TagRunOutputDTO>;
+    latestRun(): LatestTagRunOutputDTO | Promise<LatestTagRunOutputDTO>;
+    applyRun(
+      input: TagRunIdInputDTO,
+    ): TagRunOutputDTO | Promise<TagRunOutputDTO>;
+    cancelRun(
+      input: TagRunIdInputDTO,
+    ): TagRunOutputDTO | Promise<TagRunOutputDTO>;
+  };
+  usage: {
+    summary(
+      input: UsageSummaryInputDTO,
+    ): UsageSummaryOutputDTO | Promise<UsageSummaryOutputDTO>;
+  };
   tags: {
     list(): TagListOutputDTO | Promise<TagListOutputDTO>;
+    update(
+      input: UpdateTagInputDTO,
+    ): UpdateTagOutputDTO | Promise<UpdateTagOutputDTO>;
     create(
       input: CreateTagInputDTO,
     ): CreateTagOutputDTO | Promise<CreateTagOutputDTO>;

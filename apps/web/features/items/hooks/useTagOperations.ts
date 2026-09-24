@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { trpc } from "@/lib/trpc/react";
 
-export type Tag = { id: number; name: string };
+export type Tag = { description?: string | null; id: number; name: string };
 
 export function useTagOperations() {
   const utils = trpc.useUtils();

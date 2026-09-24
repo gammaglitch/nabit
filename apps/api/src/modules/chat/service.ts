@@ -5,6 +5,8 @@ import type { ExportArticleData } from "../export/dto";
 import { renderArticleDocument } from "../export/markdown";
 import type { ExportService } from "../export/service";
 import type { SettingsService } from "../settings/service";
+import { readOpenRouterUsage, usageAccounting } from "../usage/openrouter";
+import type { UsageService } from "../usage/service";
 import {
   ArticleNotFoundError,
   type ChatArticleRequest,
@@ -29,6 +31,7 @@ export class ChatService {
     private readonly exportService: ExportService,
     private readonly settingsService: SettingsService,
     private readonly env: AppEnv,
+    private readonly usage?: UsageService,
   ) {}
 
   /**
@@ -51,9 +54,23 @@ export class ChatService {
 
     const openrouter = createOpenRouter({ apiKey });
 
+    const startedAt = Date.now();
+
     return streamText({
       abortSignal: input.abortSignal,
-      model: openrouter(settings.model),
+      model: openrouter(settings.model, usageAccounting),
+      // The answer is already streaming by the time this fires; the ledger
+      // records what the turn cost, it does not gate the reply.
+      onFinish: ({ providerMetadata, usage }) => {
+        this.usage?.record({
+          ...readOpenRouterUsage(providerMetadata, usage),
+          durationMs: Date.now() - startedAt,
+          feature: "chat",
+          itemId: input.itemId,
+          model: settings.model,
+          userId: input.userId ?? null,
+        });
+      },
       messages: await convertToModelMessages(
         takeRecentMessages(input.messages, settings.historyTurns),
       ),

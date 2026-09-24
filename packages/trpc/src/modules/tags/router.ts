@@ -12,6 +12,8 @@ import {
   RemoveTagFromItemInput,
   RemoveTagFromItemOutput,
   TagListOutput,
+  UpdateTagInput,
+  UpdateTagOutput,
 } from "./dto";
 
 export const tagsRouter = router({
@@ -23,6 +25,12 @@ export const tagsRouter = router({
     .output(CreateTagOutput)
     .mutation(async ({ ctx, input }) => {
       return ctx.services.tags.create(input);
+    }),
+  update: authedProcedure
+    .input(UpdateTagInput)
+    .output(UpdateTagOutput)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.services.tags.update(input);
     }),
   delete: authedProcedure
     .input(DeleteTagInput)

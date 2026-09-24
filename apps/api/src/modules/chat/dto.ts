@@ -7,6 +7,8 @@ export interface ChatArticleRequest {
   itemId: number;
   /** Conversation so far, in AI SDK UI message form, sent by `useChat`. */
   messages: UIMessage[];
+  /** Who asked, for the spend ledger. Null for the shared API token. */
+  userId?: number | null;
 }
 
 /** The item id did not resolve to a stored article. */

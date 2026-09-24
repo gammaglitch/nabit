@@ -8,6 +8,7 @@ import { useStarred } from "@/features/shared/hooks/useStarred";
 import { StartCrawlModal } from "@/features/sites/components/StartCrawlModal";
 import { useCrawlList } from "@/features/sites/hooks/useCrawls";
 import { trpc } from "@/lib/trpc/react";
+import { AutoTagModal } from "../components/AutoTagModal";
 import { BulkActionBar } from "../components/BulkActionBar";
 import { BulkTagPicker } from "../components/BulkTagPicker";
 import { CaptureModal } from "../components/CaptureModal";
@@ -55,6 +56,7 @@ export default function ItemsPage() {
   const router = useRouter();
   const { isStarred, toggleStarred } = useStarred();
   const { addTag, removeTag } = useTagOperations();
+  const utils = trpc.useUtils();
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -71,6 +73,7 @@ export default function ItemsPage() {
   const [crawlSeedUrl, setCrawlSeedUrl] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
+  const [autoTagOpen, setAutoTagOpen] = useState(false);
   const [tagPicker, setTagPicker] = useState<{
     itemId: number;
     anchor: TagPickerAnchor;
@@ -344,6 +347,7 @@ export default function ItemsPage() {
         allTags={sidebarTagList}
         sitesCount={sitesCount}
         onOpenSites={() => router.push("/sites")}
+        onOpenTags={() => router.push("/tags")}
       />
 
       <main
@@ -561,6 +565,25 @@ export default function ItemsPage() {
 
           <button
             type="button"
+            onClick={() => setAutoTagOpen(true)}
+            title="Weigh chosen tags against every item in the library"
+            style={{
+              background: "transparent",
+              border: "1px solid var(--rule)",
+              color: "var(--ink-2)",
+              fontFamily: "var(--mono-font)",
+              fontSize: 10,
+              letterSpacing: "0.08em",
+              lineHeight: 1,
+              padding: "4px 10px",
+              textTransform: "uppercase",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Auto-tag
+          </button>
+          <button
+            type="button"
             onClick={selection.toggleMode}
             title={
               selection.active
@@ -757,6 +780,16 @@ export default function ItemsPage() {
         />
       )}
 
+      {autoTagOpen && (
+        <AutoTagModal
+          onApplied={() => {
+            void utils.ingest.list.invalidate();
+            void utils.tags.list.invalidate();
+          }}
+          onClose={() => setAutoTagOpen(false)}
+        />
+      )}
+
       <CaptureModal
         open={captureOpen}
         onOpenChange={setCaptureOpen}
@@ -776,6 +809,7 @@ export default function ItemsPage() {
 
       <QueueStatus
         hidden={captureOpen}
+        onOpenAutoTag={() => setAutoTagOpen(true)}
         onOpenCapture={() => setCaptureOpen(true)}
       />
     </div>

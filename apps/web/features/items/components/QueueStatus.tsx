@@ -12,6 +12,7 @@ import { trpc } from "@/lib/trpc/react";
 
 type QueueStatusProps = {
   hidden?: boolean;
+  onOpenAutoTag: () => void;
   onOpenCapture: () => void;
 };
 
@@ -47,10 +48,34 @@ function stateLabel(job: Job) {
   return "waiting";
 }
 
-export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
+export function QueueStatus({
+  hidden,
+  onOpenAutoTag,
+  onOpenCapture,
+}: QueueStatusProps) {
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
   const seenSuccessful = useRef(new Set<number>());
+
+  // A tagging pass is background work like any capture, and it runs for
+  // minutes. Without it here the only sign anything was happening was the
+  // modal that started it.
+  const tagRunQuery = trpc.tagging.latestRun.useQuery(undefined, {
+    refetchInterval: (query) => {
+      const status = query.state.data?.run?.status;
+      return status === "pending" || status === "scoring" ? 2500 : 30_000;
+    },
+  });
+  const tagRun = tagRunQuery.data?.run ?? null;
+  const tagRunActive =
+    tagRun?.status === "pending" || tagRun?.status === "scoring";
+  // A pass that has finished scoring is the state that most needs saying: it
+  // has spent the money and will do nothing else until someone approves it.
+  const tagRunReady = tagRun?.status === "scored";
+  const tagRunFailed = tagRun?.status === "failed";
+  const tagRunShown = tagRunActive || tagRunReady || tagRunFailed;
+  const readyCount =
+    tagRun?.matches.reduce((total, match) => total + match.count, 0) ?? 0;
 
   const jobsQuery = trpc.ingest.jobs.useQuery(
     { limit: 20 },
@@ -125,7 +150,18 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
     return null;
   }
 
-  const idle = activeCount === 0 && failed.length === 0;
+  const idle = activeCount === 0 && failed.length === 0 && !tagRunShown;
+
+  // Composed rather than branched: a capture and a tagging pass can be going
+  // at once, and the badge is the only thing on screen that says so.
+  const badgeParts: string[] = [];
+  if (activeCount > 0) badgeParts.push(`${activeCount} active`);
+  if (failed.length > 0) badgeParts.push(`${failed.length} failed`);
+  if (tagRun && tagRunActive) {
+    badgeParts.push(`tagging ${tagRun.itemsScored}/${tagRun.itemsTotal}`);
+  }
+  if (tagRunReady) badgeParts.push(`${readyCount} tags ready`);
+  if (tagRunFailed) badgeParts.push("tagging failed");
 
   return (
     <>
@@ -168,11 +204,7 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
             }}
           />
         )}
-        <span>
-          {idle
-            ? "queue idle"
-            : `${activeCount} active · ${failed.length} failed`}
-        </span>
+        <span>{idle ? "queue idle" : badgeParts.join(" · ")}</span>
       </button>
 
       {open && (
@@ -244,6 +276,25 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
             </div>
           )}
 
+          {tagRunQuery.error && (
+            <div style={{ ...messageStyle, color: "var(--accent)" }}>
+              [TAGGING STATUS UNAVAILABLE: {tagRunQuery.error.message}]
+            </div>
+          )}
+
+          {tagRun && tagRunShown && (
+            <QueueSection
+              title={tagRunReady ? "Tags ready to apply" : "Auto-tagging"}
+              accent={tagRunFailed}
+            >
+              <TagRunRow
+                onOpen={tagRunReady ? onOpenAutoTag : undefined}
+                readyCount={readyCount}
+                run={tagRun}
+              />
+            </QueueSection>
+          )}
+
           {grouped.working.length > 0 && (
             <QueueSection title="Working">
               {grouped.working.map((job, index) => (
@@ -273,6 +324,105 @@ export function QueueStatus({ hidden, onOpenCapture }: QueueStatusProps) {
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * The bulk tagging pass: while it runs, when it is waiting to be approved,
+ * and when it gave up. A finished pass used to vanish from here entirely,
+ * which left the tags it had scored sitting unapplied and unmentioned.
+ */
+function TagRunRow({
+  onOpen,
+  readyCount,
+  run,
+}: {
+  /** Set only when there is something to approve. */
+  onOpen?: () => void;
+  readyCount: number;
+  run: NonNullable<RouterOutputs["tagging"]["latestRun"]["run"]>;
+}) {
+  const share =
+    run.itemsTotal > 0
+      ? Math.min(100, Math.round((run.itemsScored / run.itemsTotal) * 100))
+      : 0;
+  const failing = run.status === "failed";
+
+  return (
+    <button
+      disabled={!onOpen}
+      onClick={onOpen}
+      type="button"
+      style={{
+        background: "transparent",
+        border: 0,
+        borderBottom: "1px solid var(--rule-soft)",
+        cursor: onOpen ? "pointer" : "default",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        padding: "12px 20px",
+        textAlign: "left",
+        width: "100%",
+      }}
+    >
+      <div
+        style={{
+          color: "var(--ink-2)",
+          display: "flex",
+          fontFamily: "var(--mono-font)",
+          fontSize: 11,
+          justifyContent: "space-between",
+        }}
+      >
+        <span style={{ color: failing ? "var(--accent)" : undefined }}>
+          {run.status === "pending"
+            ? "waiting for the worker"
+            : run.status === "scoring"
+              ? "weighing tags against the library"
+              : failing
+                ? "the pass gave up"
+                : `${readyCount} tags ready — click to review`}
+        </span>
+        <span style={{ color: "var(--ink-3)" }}>
+          {run.itemsScored}/{run.itemsTotal}
+        </span>
+      </div>
+      {!failing && (
+        <div
+          aria-label={`${share}% scored`}
+          role="progressbar"
+          aria-valuemax={run.itemsTotal}
+          aria-valuemin={0}
+          aria-valuenow={run.itemsScored}
+          style={{ background: "var(--rule-soft)", height: 4, width: "100%" }}
+        >
+          <div
+            style={{
+              background: "var(--ink)",
+              height: "100%",
+              width: `${share}%`,
+            }}
+          />
+        </div>
+      )}
+      <div
+        style={{
+          color: failing ? "var(--accent)" : "var(--ink-3)",
+          fontFamily: "var(--mono-font)",
+          fontSize: 10,
+          overflowWrap: "anywhere",
+        }}
+      >
+        {failing
+          ? (run.errorMessage ?? "No reason was recorded.")
+          : `${readyCount} match${readyCount === 1 ? "" : "es"}${
+              run.status === "scoring" ? " so far" : ""
+            }`}
+        {run.failedCount > 0 ? ` · ${run.failedCount} could not be scored` : ""}
+        {!failing && " · nothing is applied until you approve it"}
+      </div>
+    </button>
   );
 }
 

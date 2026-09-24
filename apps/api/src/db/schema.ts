@@ -489,6 +489,9 @@ export const commentsTable = schema.table(
 export const tagsTable = schema.table("tags", (t) => ({
   id: t.bigserial({ mode: "number" }).primaryKey(),
   name: t.text("name").notNull().unique(),
+  // Optional, and written by the user. Read when Jev suggests tags: the name
+  // alone is often too terse to judge an article against.
+  description: t.text("description"),
 }));
 
 export const assetsTable = schema.table(
@@ -637,6 +640,155 @@ export const articleSummariesTable = schema.table(
 // `insert ... on conflict do nothing`, which is idempotent, safe to run on
 // every worker tick, and safe if the worker is ever scaled past one replica.
 // No leader election required.
+// Every model call this instance makes, with what it cost. OpenRouter returns
+// the price of a call in its response, so this is the real figure rather than
+// tokens multiplied by a rate table that goes stale.
+export const llmCallsTable = schema.table(
+  "llm_calls",
+  (t) => ({
+    id: t.bigserial({ mode: "number" }).primaryKey(),
+    /** Which part of nabit spent the money. */
+    feature: t.text("feature").notNull(),
+    model: t.text("model").notNull(),
+    status: t.text("status").notNull().default("success"),
+    promptTokens: t.integer("prompt_tokens"),
+    completionTokens: t.integer("completion_tokens"),
+    totalTokens: t.integer("total_tokens"),
+    // Null when the provider did not price the call. Scaled for Jev, where a
+    // single decision costs a few millionths of a dollar.
+    costUsd: t.numeric("cost_usd", { precision: 14, scale: 8, mode: "number" }),
+    durationMs: t.integer("duration_ms"),
+    /** The provider's own id for the call, for chasing one up with them. */
+    generationId: t.text("generation_id"),
+    userId: t
+      .bigint("user_id", { mode: "number" })
+      .references(() => usersTable.id, { onDelete: "set null" }),
+    itemId: t
+      .bigint("item_id", { mode: "number" })
+      .references(() => itemsTable.id, { onDelete: "set null" }),
+    tagRunId: t
+      .bigint("tag_run_id", { mode: "number" })
+      .references(() => tagRunsTable.id, { onDelete: "set null" }),
+    errorMessage: t.text("error_message"),
+    createdAt: t
+      .timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }),
+  (table) => [
+    index("idx_llm_calls_created_at").on(table.createdAt),
+    index("idx_llm_calls_feature_created_at").on(
+      table.feature,
+      table.createdAt,
+    ),
+    check(
+      "llm_calls_status_check",
+      sql`${table.status} in ('success', 'error')`,
+    ),
+  ],
+);
+
+// One bulk tagging pass: a set of tags weighed against every item in the
+// library that does not already carry them. Scored by the worker, because a
+// library of any size is minutes of model calls, then applied only once the
+// user has seen what it would do.
+export const tagRunsTable = schema.table(
+  "tag_runs",
+  (t) => ({
+    id: t.bigserial({ mode: "number" }).primaryKey(),
+    status: t.text("status").notNull().default("pending"),
+    /** Candidate items at the time the run was started. */
+    itemsTotal: t.integer("items_total").notNull().default(0),
+    itemsScored: t.integer("items_scored").notNull().default(0),
+    /** Item/tag pairs Jev was confident about. */
+    matchCount: t.integer("match_count").notNull().default(0),
+    /** Rows actually written to item_tags when the run was applied. */
+    appliedCount: t.integer("applied_count").notNull().default(0),
+    /** Items the provider refused even after the retry pass. */
+    failedCount: t.integer("failed_count").notNull().default(0),
+    // Kept, not just counted: a resumed run retries these at the end, and a
+    // cursor alone would have walked straight past them.
+    failedItemIds: t
+      .jsonb("failed_item_ids")
+      .$type<number[]>()
+      .notNull()
+      .default([]),
+    // Scoring resumes from here rather than restarting: matches already
+    // written are kept, so a retry does not re-pay for what it scored.
+    cursorItemId: t.bigint("cursor_item_id", { mode: "number" }),
+    model: t.text("model"),
+    errorMessage: t.text("error_message"),
+    attempts: t.integer("attempts").notNull().default(0),
+    maxAttempts: t.integer("max_attempts").notNull().default(3),
+    runAfter: t
+      .timestamp("run_after", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lockedBy: t.text("locked_by"),
+    lockedAt: t.timestamp("locked_at", { withTimezone: true }),
+    createdByUserId: t
+      .bigint("created_by_user_id", { mode: "number" })
+      .references(() => usersTable.id, { onDelete: "set null" }),
+    createdAt: t
+      .timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: t
+      .timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: t.timestamp("finished_at", { withTimezone: true }),
+    appliedAt: t.timestamp("applied_at", { withTimezone: true }),
+  }),
+  (table) => [
+    index("idx_tag_runs_status_run_after").on(table.status, table.runAfter),
+    check(
+      "tag_runs_status_check",
+      sql`${table.status} in ('pending', 'scoring', 'scored', 'applied', 'failed', 'cancelled')`,
+    ),
+  ],
+);
+
+export const tagRunTagsTable = schema.table(
+  "tag_run_tags",
+  (t) => ({
+    runId: t
+      .bigint("run_id", { mode: "number" })
+      .notNull()
+      .references(() => tagRunsTable.id, { onDelete: "cascade" }),
+    tagId: t
+      .bigint("tag_id", { mode: "number" })
+      .notNull()
+      .references(() => tagsTable.id, { onDelete: "cascade" }),
+  }),
+  (table) => [primaryKey({ columns: [table.runId, table.tagId] })],
+);
+
+// What the run would do, written as it scores. Kept after applying so the
+// counts a user approved stay inspectable.
+export const tagRunMatchesTable = schema.table(
+  "tag_run_matches",
+  (t) => ({
+    runId: t
+      .bigint("run_id", { mode: "number" })
+      .notNull()
+      .references(() => tagRunsTable.id, { onDelete: "cascade" }),
+    itemId: t
+      .bigint("item_id", { mode: "number" })
+      .notNull()
+      .references(() => itemsTable.id, { onDelete: "cascade" }),
+    tagId: t
+      .bigint("tag_id", { mode: "number" })
+      .notNull()
+      .references(() => tagsTable.id, { onDelete: "cascade" }),
+    confidence: t.real("confidence").notNull(),
+  }),
+  (table) => [
+    primaryKey({ columns: [table.runId, table.itemId, table.tagId] }),
+    index("idx_tag_run_matches_run_tag").on(table.runId, table.tagId),
+  ],
+);
+
 export const digestsTable = schema.table(
   "digests",
   (t) => ({
